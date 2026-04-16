@@ -1,160 +1,126 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
+import {
+  BrowserRouter as Router,
+  Routes,
+  Route,
+  Link,
+  Navigate,
+} from "react-router-dom";
+import { supabase } from "./supabaseClient";
+import useUserRole from "./useUserRole";
+
+import Login from "./Login";
 import CustomersPage from "./CustomersPage";
 import BrandsPage from "./BrandsPage";
 import BrandCustomerPage from "./BrandCustomerPage";
 import RMPage from "./RMPage";
 
 function DashboardPage() {
-  return (
-    <div style={styles.dashboardCard}>
-      <h1 style={styles.dashboardTitle}>Dashboard</h1>
-      <p style={styles.dashboardText}>Welcome to MAKINA ERP</p>
-    </div>
-  );
+  return <h2>Dashboard</h2>;
 }
 
 export default function App() {
-  const [page, setPage] = useState("dashboard");
+  const [session, setSession] = useState(null);
+  const [loadingSession, setLoadingSession] = useState(true);
 
-  const renderPage = () => {
-    switch (page) {
-      case "customers":
-        return <CustomersPage />;
-      case "brands":
-        return <BrandsPage />;
-      case "brandCustomer":
-        return <BrandCustomerPage />;
-      case "items":
-        return <ItemsPage />;
-      case "rm":
-        return <RMPage />;
-      case "dashboard":
-      default:
-        return <DashboardPage />;
-    }
-  };
+  const { role, loading } = useUserRole(session?.user?.id || null);
+
+  useEffect(() => {
+    const getSession = async () => {
+      const { data } = await supabase.auth.getSession();
+      setSession(data.session);
+      setLoadingSession(false);
+    };
+
+    getSession();
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  // ⛔ لا تعرض أي شيء حتى نتأكد من session
+  if (loadingSession) {
+    return <div style={{ padding: 30 }}>Loading...</div>;
+  }
+
+  // 🔐 إذا لا يوجد session → اجبار login
+  if (!session) {
+    return <Login />;
+  }
+
+  // ⛔ انتظر تحميل role
+  if (loading) {
+    return <div style={{ padding: 30 }}>Loading role...</div>;
+  }
 
   return (
-    <div style={styles.app}>
-      <aside style={styles.sidebar}>
-        <div style={styles.logoWrap}>
-          <div style={styles.logo}>MAKINA ERP</div>
+    <Router>
+      <div style={{ display: "flex", minHeight: "100vh" }}>
+        {/* Sidebar */}
+        <div style={{ width: "250px", background: "#071a3a", color: "#fff", padding: "20px" }}>
+          <h2>MAKINA ERP</h2>
+
+          <p>User: {session.user.email}</p>
+          <p>Role: {role}</p>
+
+          <hr />
+
+          <nav style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+            <Link to="/" style={linkStyle}>Dashboard</Link>
+
+            {(role === "admin" || role === "user") && (
+              <>
+                <Link to="/customers" style={linkStyle}>Customers</Link>
+                <Link to="/brands" style={linkStyle}>Brands</Link>
+                <Link to="/brand-customer" style={linkStyle}>Brand-Customer</Link>
+                <Link to="/rm" style={linkStyle}>RM</Link>
+              </>
+            )}
+          </nav>
+
+          <button
+            onClick={async () => {
+              await supabase.auth.signOut();
+              setSession(null);
+            }}
+            style={logoutBtn}
+          >
+            Logout
+          </button>
         </div>
 
-        <button
-          style={page === "dashboard" ? styles.menuActive : styles.menu}
-          onClick={() => setPage("dashboard")}
-        >
-          Dashboard
-        </button>
+        {/* Content */}
+        <div style={{ flex: 1, padding: "20px" }}>
+          <Routes>
+            <Route path="/" element={<DashboardPage />} />
 
-        <button
-          style={page === "customers" ? styles.menuActive : styles.menu}
-          onClick={() => setPage("customers")}
-        >
-          Customers
-        </button>
-
-        <button
-          style={page === "brands" ? styles.menuActive : styles.menu}
-          onClick={() => setPage("brands")}
-        >
-          Brands
-        </button>
-
-        <button
-          style={page === "brandCustomer" ? styles.menuActive : styles.menu}
-          onClick={() => setPage("brandCustomer")}
-        >
-          Brand-Customer
-        </button>
-
-        <button
-          style={page === "items" ? styles.menuActive : styles.menu}
-          onClick={() => setPage("items")}
-        >
-          Items
-        </button>
-
-        <button
-          style={page === "rm" ? styles.menuActive : styles.menu}
-          onClick={() => setPage("rm")}
-        >
-          RM
-        </button>
-      </aside>
-
-      <main style={styles.content}>{renderPage()}</main>
-    </div>
+            <Route path="/customers" element={<CustomersPage />} />
+            <Route path="/brands" element={<BrandsPage />} />
+            <Route path="/brand-customer" element={<BrandCustomerPage />} />
+            <Route path="/rm" element={<RMPage />} />
+          </Routes>
+        </div>
+      </div>
+    </Router>
   );
 }
 
-const styles = {
-  app: {
-    display: "flex",
-    minHeight: "100vh",
-    fontFamily: "Arial, sans-serif",
-    background: "#eef2f7",
-  },
-  sidebar: {
-    width: "220px",
-    background: "#041738",
-    color: "#fff",
-    padding: "12px 0",
-    boxSizing: "border-box",
-    display: "flex",
-    flexDirection: "column",
-  },
-  logoWrap: {
-    padding: "14px 16px 18px 16px",
-    borderBottom: "1px solid rgba(255,255,255,0.08)",
-    marginBottom: "8px",
-  },
-  logo: {
-    fontSize: "24px",
-    fontWeight: "700",
-    lineHeight: "1.2",
-  },
-  menu: {
-    background: "transparent",
-    color: "#fff",
-    border: "none",
-    textAlign: "left",
-    padding: "14px 24px",
-    cursor: "pointer",
-    fontSize: "16px",
-  },
-  menuActive: {
-    background: "rgba(255,255,255,0.12)",
-    color: "#fff",
-    border: "none",
-    textAlign: "left",
-    padding: "14px 24px",
-    cursor: "pointer",
-    fontSize: "16px",
-  },
-  content: {
-    flex: 1,
-    padding: "20px",
-    boxSizing: "border-box",
-    overflow: "auto",
-  },
-  dashboardCard: {
-    background: "#fff",
-    border: "1px solid #d9dfeb",
-    borderRadius: "12px",
-    padding: "28px",
-    minHeight: "calc(100vh - 40px)",
-    boxSizing: "border-box",
-  },
-  dashboardTitle: {
-    margin: 0,
-    fontSize: "36px",
-    fontWeight: "700",
-  },
-  dashboardText: {
-    marginTop: "12px",
-    color: "#555",
-    fontSize: "18px",
-  },
+const linkStyle = {
+  color: "#fff",
+  textDecoration: "none",
+  fontSize: "16px",
+};
+
+const logoutBtn = {
+  marginTop: "20px",
+  background: "red",
+  color: "#fff",
+  padding: "10px",
+  border: "none",
+  cursor: "pointer",
 };
