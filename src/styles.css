@@ -1,0 +1,85 @@
+* { box-sizing: border-box; }
+body { margin: 0; font-family: Arial, sans-serif; background: #f3f4f6; color: #111827; }
+button, input, select { font: inherit; }
+.app-shell { display: grid; grid-template-columns: 240px 1fr; min-height: 100vh; }
+.sidebar { background: #0f172a; color: white; padding: 18px; display: flex; flex-direction: column; gap: 8px; }
+.logo { font-size: 26px; font-weight: 700; margin-bottom: 10px; }
+.nav { border: 0; background: transparent; color: #cbd5e1; text-align: left; padding: 10px 12px; border-radius: 10px; cursor: pointer; }
+.nav.active, .nav:hover { background: #1e293b; color: white; }
+.nav.danger { background: #7f1d1d; color: white; margin-top: 10px; }
+.content { padding: 18px; }
+.page-header h1 { margin: 0 0 6px; font-size: 30px; }
+.subtle { color: #6b7280; margin-bottom: 6px; }
+.toolbar { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 16px; }
+.toolbar button { padding: 8px 12px; border-radius: 10px; border: 1px solid #cbd5e1; background: white; cursor: pointer; }
+.active-inline { background: #111827 !important; color: white; }
+.card { background: white; border: 1px solid #ddd; border-radius: 14px; padding: 16px; }
+.section-title { font-size: 20px; font-weight: 700; margin-bottom: 12px; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.form-grid { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 12px; }
+.field-label { display: block; margin-bottom: 6px; font-size: 12px; color: #6b7280; text-transform: uppercase; }
+input, select { width: 100%; padding: 8px; border-radius: 10px; border: 1px solid #cbd5e1; background: white; }
+.readonly { background: #f1f5f9; }
+.tags { display: flex; flex-wrap: wrap; gap: 10px; }
+.tag { display: inline-flex; gap: 6px; align-items: center; background: #f8fafc; border: 1px solid #ddd; padding: 6px 10px; border-radius: 999px; }
+.table { width: 100%; border-collapse: collapse; }
+.table th, .table td { border: 1px solid #ddd; padding: 8px; text-align: left; vertical-align: middle; }
+.table th { background: #fafafa; }
+.selected { background: #e0e7ff; }
+.top-gap { margin-top: 18px; }
+
+.pdo-sheet { display: flex; flex-direction: column; gap: 14px; }
+.pdo-header-grid { display: grid; grid-template-columns: 280px 90px 1fr 90px 180px; background: white; border: 1px solid #888; }
+.pdo-title { background: #dbeaf0; color: #dc2626; font-weight: 700; font-size: 18px; display: flex; align-items: center; justify-content: center; border-right: 1px solid #888; min-height: 42px; }
+.pdo-cell { border-right: 1px solid #888; border-bottom: 1px solid #888; padding: 6px 8px; }
+.pdo-cell.label { background: #efefef; color: #dc2626; font-weight: 700; }
+.pdo-cell.redfill { background: #ff2d2d; }
+.pdo-cell.redfill select { background: transparent; border: 0; font-weight: 700; }
+.matrix-wrap { overflow: auto; }
+.pdo-matrix { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 14px; }
+.pdo-matrix th, .pdo-matrix td { border: 1px solid #888; padding: 4px 6px; text-align: center; }
+.item-col { min-width: 320px; text-align: left !important; }
+.purple { background: #d9d2e9; }
+.yellow { background: #fff200; }
+.yellow input { background: transparent; border: 0; text-align: center; font-weight: 700; }
+.pink { background: #efd6c9; }
+.num { text-align: right !important; font-variant-numeric: tabular-nums; }
+.summary-strong td { background: #f5f5f5; font-weight: 700; }
+
+@media (max-width: 1100px) {
+  .app-shell { grid-template-columns: 1fr; }
+  .sidebar { flex-direction: row; flex-wrap: wrap; }
+  .logo { width: 100%; }
+  .grid2 { grid-template-columns: 1fr; }
+  .form-grid { grid-template-columns: 1fr; }
+  .pdo-header-grid { grid-template-columns: 1fr 90px 1fr 90px 1fr; }
+}
+
+
+.pi-sheet { display: flex; flex-direction: column; gap: 14px; }
+.pi-topbar { background: #dbeaf0; border: 1px solid #888; padding: 10px 14px; }
+.pi-title { color: #dc2626; font-weight: 700; font-size: 20px; text-align: center; }
+.pi-head-grid {
+  display: grid;
+  grid-template-columns: 140px 1fr 140px 1fr;
+  border: 1px solid #888;
+  background: white;
+}
+.pi-label, .pi-value {
+  padding: 8px 10px;
+  border-right: 1px solid #888;
+  border-bottom: 1px solid #888;
+}
+.pi-label { background: #efefef; font-weight: 700; color: #b91c1c; }
+.pi-notes-box {
+  min-height: 90px;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  padding: 12px;
+  background: #fff;
+  white-space: pre-wrap;
+}
+
+@media (max-width: 900px) {
+  .pi-head-grid { grid-template-columns: 1fr 1fr; }
+}
