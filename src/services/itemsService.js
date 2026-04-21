@@ -1,39 +1,12 @@
-import { supabase } from "../lib/supabase";
+import { supabase } from "../lib/supabaseClient";
 
-const ITEMS_TABLE = "items";
-const CUSTOMERS_TABLE = "customers";
+const TABLE_NAME = "item_master";
 
 export async function getItems() {
   const { data, error } = await supabase
-    .from(ITEMS_TABLE)
-    .select(`
-      id,
-      item_code,
-      item_name,
-      customer_id,
-      customer_brand,
-      pack_size,
-      unit,
-      status,
-      notes,
-      created_at,
-      customers (
-        id,
-        customer_name,
-        customer_brand
-      )
-    `)
-    .order("created_at", { ascending: false });
-
-  if (error) throw error;
-  return data || [];
-}
-
-export async function getCustomersForItems() {
-  const { data, error } = await supabase
-    .from(CUSTOMERS_TABLE)
-    .select("id, customer_name, customer_brand")
-    .order("customer_name", { ascending: true });
+    .from(TABLE_NAME)
+    .select("*")
+    .order("item_code", { ascending: true });
 
   if (error) throw error;
   return data || [];
@@ -41,7 +14,7 @@ export async function getCustomersForItems() {
 
 export async function createItem(payload) {
   const { data, error } = await supabase
-    .from(ITEMS_TABLE)
+    .from(TABLE_NAME)
     .insert([payload])
     .select()
     .single();
@@ -52,7 +25,7 @@ export async function createItem(payload) {
 
 export async function updateItem(id, payload) {
   const { data, error } = await supabase
-    .from(ITEMS_TABLE)
+    .from(TABLE_NAME)
     .update(payload)
     .eq("id", id)
     .select()
@@ -64,7 +37,7 @@ export async function updateItem(id, payload) {
 
 export async function deleteItem(id) {
   const { error } = await supabase
-    .from(ITEMS_TABLE)
+    .from(TABLE_NAME)
     .delete()
     .eq("id", id);
 

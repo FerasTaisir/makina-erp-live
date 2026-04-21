@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import { supabase } from "./lib/supabaseClient";
 import {
   getCustomers,
   getBrandsForCustomer,
@@ -6,34 +7,6 @@ import {
   updateCustomer,
   deleteCustomer,
 } from "./services/customersService";
-
-function normalizeBrandList(value) {
-  if (Array.isArray(value)) {
-    return value.filter(Boolean);
-  }
-
-  if (!value) {
-    return [];
-  }
-
-  if (typeof value === "string") {
-    const trimmed = value.trim();
-
-    // PostgreSQL array text format: {STO,MAK,SCH}
-    if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
-      const inner = trimmed.slice(1, -1).trim();
-      if (!inner) return [];
-      return inner
-        .split(",")
-        .map((item) => item.replace(/^"(.*)"$/, "$1").trim())
-        .filter(Boolean);
-    }
-
-    return [trimmed];
-  }
-
-  return [];
-}
 
 function getNextCustomerCode(rows) {
   let maxNumber = 0;
@@ -57,10 +30,10 @@ function getNextCustomerCode(rows) {
 function buildEmptyForm(nextCode = "CUST-0001") {
   return {
     customer_code: nextCode,
+    customer_symbol: "",
     customer_name: "",
-    customer_brand: "",
-    customer_brands: [],
     selected_brand_symbol: "",
+    visual_brands: [],
     contact_person: "",
     phone: "",
     email: "",
@@ -72,9 +45,21 @@ function buildEmptyForm(nextCode = "CUST-0001") {
   };
 }
 
+function buildCustomerBrandSymbol(brandSymbol, customerSymbol) {
+  const left = (brandSymbol || "").trim();
+  const right = (customerSymbol || "").trim();
+
+  if (!left && !right) return "";
+  if (!left) return right;
+  if (!right) return left;
+
+  return `${left}-${right}`;
+}
+
 export default function CustomersPage() {
   const [rows, setRows] = useState([]);
   const [brands, setBrands] = useState([]);
+  const [customerBrandsMap, setCustomerBrandsMap] = useState({});
   const [form, setForm] = useState(buildEmptyForm());
   const [editingId, setEditingId] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -90,26 +75,53 @@ export default function CustomersPage() {
       setLoading(true);
       setErrorMsg("");
 
-      const [customersData, brandsData] = await Promise.all([
+      const [customersData, brandsData, brandCustomerRes] = await Promise.all([
         getCustomers(),
         getBrandsForCustomer(),
+        supabase
+          .from("brand_customer")
+          .select("customer_id, customer_brand, brand_symbol")
+          .order("customer_brand", { ascending: true }),
       ]);
 
-      const normalizedCustomers = (customersData || []).map((row) => ({
-        ...row,
-        customer_brands: normalizeBrandList(row.customer_brands),
-      }));
+      if (brandCustomerRes.error) {
+        throw brandCustomerRes.error;
+      }
+
+      const normalizedCustomers = customersData || [];
+      const normalizedBrands = brandsData || [];
+      const brandCustomerRows = brandCustomerRes.data || [];
+
+      const map = {};
+      brandCustomerRows.forEach((row) => {
+        if (!map[row.customer_id]) {
+          map[row.customer_id] = [];
+        }
+        map[row.customer_id].push(row.customer_brand);
+
+        if (row.brand_symbol && !map[`${row.customer_id}__symbols`]) {
+          map[`${row.customer_id}__symbols`] = [];
+        }
+        if (
+          row.brand_symbol &&
+          !map[`${row.customer_id}__symbols`].includes(row.brand_symbol)
+        ) {
+          map[`${row.customer_id}__symbols`].push(row.brand_symbol);
+        }
+      });
 
       setRows(normalizedCustomers);
-      setBrands(brandsData || []);
+      setBrands(normalizedBrands);
+      setCustomerBrandsMap(map);
 
       if (!editingId) {
         const nextCode = getNextCustomerCode(normalizedCustomers);
         setForm((prev) => ({
           ...prev,
-          customer_code: prev.customer_code?.startsWith("CUST-")
-            ? prev.customer_code
-            : nextCode,
+          customer_code:
+            prev.customer_code && prev.customer_code.startsWith("CUST-")
+              ? prev.customer_code
+              : nextCode,
         }));
       }
     } catch (error) {
@@ -130,25 +142,29 @@ export default function CustomersPage() {
   }
 
   function handleAddBrand() {
-    if (!form.selected_brand_symbol) return;
+    const brandSymbol = (form.selected_brand_symbol || "").trim();
+    if (!brandSymbol) return;
 
-    if (form.customer_brands.includes(form.selected_brand_symbol)) {
-      return;
-    }
+    setForm((prev) => {
+      if (prev.visual_brands.includes(brandSymbol)) {
+        return {
+          ...prev,
+          selected_brand_symbol: "",
+        };
+      }
 
-    setForm((prev) => ({
-      ...prev,
-      customer_brands: [...prev.customer_brands, prev.selected_brand_symbol],
-      selected_brand_symbol: "",
-    }));
+      return {
+        ...prev,
+        visual_brands: [...prev.visual_brands, brandSymbol],
+        selected_brand_symbol: "",
+      };
+    });
   }
 
   function handleRemoveBrand(brandSymbol) {
     setForm((prev) => ({
       ...prev,
-      customer_brands: prev.customer_brands.filter(
-        (item) => item !== brandSymbol
-      ),
+      visual_brands: prev.visual_brands.filter((item) => item !== brandSymbol),
     }));
   }
 
@@ -167,17 +183,19 @@ export default function CustomersPage() {
       return;
     }
 
+    if (!form.customer_symbol.trim()) {
+      setErrorMsg("Customer Symbol is required.");
+      return;
+    }
+
     try {
       setSaving(true);
       setErrorMsg("");
 
-      const normalizedBrands = normalizeBrandList(form.customer_brands);
-
       const payload = {
         customer_code: form.customer_code.trim() || getNextCustomerCode(rows),
+        customer_symbol: form.customer_symbol.trim(),
         customer_name: form.customer_name.trim(),
-        customer_brand: form.customer_brand.trim() || null,
-        customer_brands: normalizedBrands,
         contact_person: form.contact_person.trim() || null,
         phone: form.phone.trim() || null,
         email: form.email.trim() || null,
@@ -195,14 +213,14 @@ export default function CustomersPage() {
       }
 
       const refreshed = await getCustomers();
-      const normalizedRows = (refreshed || []).map((row) => ({
-        ...row,
-        customer_brands: normalizeBrandList(row.customer_brands),
-      }));
+      const normalizedRows = refreshed || [];
 
       setRows(normalizedRows);
       setForm(buildEmptyForm(getNextCustomerCode(normalizedRows)));
       setEditingId(null);
+
+      await loadData();
+      window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (error) {
       console.error("Save customer error:", error);
       setErrorMsg(error.message || "Failed to save customer.");
@@ -212,13 +230,16 @@ export default function CustomersPage() {
   }
 
   function handleEdit(row) {
+    const savedBrandSymbols = customerBrandsMap[`${row.id}__symbols`] || [];
+
     setEditingId(row.id);
+
     setForm({
       customer_code: row.customer_code || "",
+      customer_symbol: row.customer_symbol || "",
       customer_name: row.customer_name || "",
-      customer_brand: row.customer_brand || "",
-      customer_brands: normalizeBrandList(row.customer_brands),
       selected_brand_symbol: "",
+      visual_brands: savedBrandSymbols,
       contact_person: row.contact_person || "",
       phone: row.phone || "",
       email: row.email || "",
@@ -228,7 +249,9 @@ export default function CustomersPage() {
       status: row.status || "active",
       notes: row.notes || "",
     });
+
     setErrorMsg("");
+    window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   async function handleDelete(id) {
@@ -239,22 +262,22 @@ export default function CustomersPage() {
       await deleteCustomer(id);
 
       const refreshed = await getCustomers();
-      const normalizedRows = (refreshed || []).map((row) => ({
-        ...row,
-        customer_brands: normalizeBrandList(row.customer_brands),
-      }));
-
+      const normalizedRows = refreshed || [];
       setRows(normalizedRows);
 
       if (editingId === id) {
         setForm(buildEmptyForm(getNextCustomerCode(normalizedRows)));
         setEditingId(null);
       }
+
+      await loadData();
     } catch (error) {
       console.error("Delete customer error:", error);
       setErrorMsg(error.message || "Failed to delete customer.");
     }
   }
+
+  const brandOptions = useMemo(() => brands || [], [brands]);
 
   return (
     <div style={{ padding: "20px" }}>
@@ -302,13 +325,14 @@ export default function CustomersPage() {
         </div>
 
         <div>
-          <label>Customer Symbol</label>
+          <label>Customer Symbol *</label>
           <input
             type="text"
-            name="customer_brand"
-            value={form.customer_brand}
+            name="customer_symbol"
+            value={form.customer_symbol}
             onChange={handleChange}
-            placeholder="Customer Symbol"
+            placeholder="e.g. LEB-1"
+            required
             style={{ width: "100%", padding: "8px" }}
           />
         </div>
@@ -323,7 +347,7 @@ export default function CustomersPage() {
               style={{ width: "100%", padding: "8px" }}
             >
               <option value="">Select Brand Symbol</option>
-              {brands.map((brand) => (
+              {brandOptions.map((brand) => (
                 <option key={brand.id} value={brand.brand_symbol}>
                   {brand.brand_symbol}
                 </option>
@@ -339,45 +363,64 @@ export default function CustomersPage() {
             </button>
           </div>
 
-          {form.customer_brands.length > 0 && (
+          {form.visual_brands.length > 0 && (
             <div
               style={{
-                marginTop: "8px",
+                marginTop: "10px",
                 display: "flex",
-                flexWrap: "wrap",
+                flexDirection: "column",
                 gap: "8px",
               }}
             >
-              {form.customer_brands.map((brandSymbol) => (
+              {form.visual_brands.map((brandSymbol) => (
                 <div
                   key={brandSymbol}
                   style={{
-                    display: "flex",
+                    display: "grid",
+                    gridTemplateColumns: "110px 1fr",
+                    gap: "14px",
                     alignItems: "center",
-                    gap: "6px",
-                    background: "#eef2ff",
-                    padding: "6px 10px",
-                    borderRadius: "16px",
                   }}
                 >
-                  <span>{brandSymbol}</span>
-                  <button
-                    type="button"
-                    onClick={() => handleRemoveBrand(brandSymbol)}
+                  <div
                     style={{
-                      border: "none",
-                      background: "transparent",
-                      color: "red",
-                      cursor: "pointer",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "6px",
+                      background: "#eef2ff",
+                      padding: "6px 10px",
+                      borderRadius: "10px",
                       fontWeight: "bold",
+                      width: "fit-content",
                     }}
                   >
-                    ×
-                  </button>
+                    <span>{brandSymbol}</span>
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveBrand(brandSymbol)}
+                      style={{
+                        border: "none",
+                        background: "transparent",
+                        color: "red",
+                        cursor: "pointer",
+                        fontWeight: "bold",
+                      }}
+                    >
+                      ×
+                    </button>
+                  </div>
+
+                  <div style={{ fontWeight: "bold" }}>
+                    {buildCustomerBrandSymbol(brandSymbol, form.customer_symbol)}
+                  </div>
                 </div>
               ))}
             </div>
           )}
+
+          <div style={{ marginTop: "8px", fontSize: "12px", color: "#666" }}>
+            Visual only here. Save actual Customer-Brand links from the Customer Brand page.
+          </div>
         </div>
 
         <div>
@@ -497,7 +540,7 @@ export default function CustomersPage() {
                 <th>Customer Code</th>
                 <th>Customer Name</th>
                 <th>Customer Symbol</th>
-                <th>Customer Brands</th>
+                <th>Customer-Brand</th>
                 <th>Contact Person</th>
                 <th>Phone</th>
                 <th>Email</th>
@@ -522,19 +565,15 @@ export default function CustomersPage() {
                   <tr key={row.id}>
                     <td>{row.customer_code || ""}</td>
                     <td>{row.customer_name || ""}</td>
-                    <td>{row.customer_brand || ""}</td>
+                    <td>{row.customer_symbol || ""}</td>
                     <td>
-                      <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                        {Array.isArray(row.customer_brands) && row.customer_brands.length > 0 ? (
-                          row.customer_brands.map((brandSymbol, index) => (
-                            <div key={`${row.id}-${brandSymbol}-${index}`}>
-                              {brandSymbol}
-                            </div>
-                          ))
-                        ) : row.customer_brand ? (
-                          <div>{row.customer_brand}</div>
-                        ) : null}
-                      </div>
+                      {(customerBrandsMap[row.id] || []).length === 0 ? (
+                        "-"
+                      ) : (
+                        customerBrandsMap[row.id].map((cb, index) => (
+                          <div key={`${row.id}-${cb}-${index}`}>{cb}</div>
+                        ))
+                      )}
                     </td>
                     <td>{row.contact_person || ""}</td>
                     <td>{row.phone || ""}</td>
@@ -561,6 +600,10 @@ export default function CustomersPage() {
           </table>
         </div>
       )}
+
+      <div style={{ marginTop: "14px", color: "#555", fontSize: "14px" }}>
+        Customer Brands are created and saved from the <strong>Customer Brand</strong> page.
+      </div>
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useState } from "react";
 import {
   fetchBrandCustomers,
   fetchBrandsLookup,
@@ -6,461 +6,330 @@ import {
   insertBrandCustomer,
   updateBrandCustomer,
   removeBrandCustomer,
-} from './services/brandCustomersService'
-
-function nextCode(rows = []) {
-  const max = rows.reduce((m, r) => {
-    const n = parseInt(String(r.bc_code || '').replace(/\D/g, ''), 10)
-    return Number.isFinite(n) ? Math.max(m, n) : m
-  }, 0)
-
-  return `BC-${String(max + 1).padStart(4, '0')}`
-}
-
-function Field({ label, children }) {
-  return (
-    <div className="bc-field">
-      <label className="bc-label">{label}</label>
-      {children}
-    </div>
-  )
-}
+} from "./services/brandCustomersService";
 
 export default function BrandCustomerPage() {
-  const [rows, setRows] = useState([])
-  const [brands, setBrands] = useState([])
-  const [customers, setCustomers] = useState([])
-  const [selectedId, setSelectedId] = useState(null)
-  const [editingId, setEditingId] = useState(null)
-  const [loading, setLoading] = useState(true)
+  const emptyForm = {
+    id: null,
+    customer_id: "",
+    brand_symbol: "",
+    customer_brand: "",
+  };
 
-  const selected = useMemo(
-    () => rows.find((x) => String(x.id) === String(selectedId)) || null,
-    [rows, selectedId]
-  )
-
-  const isReadOnly = !selected || String(editingId) !== String(selectedId)
+  const [form, setForm] = useState(emptyForm);
+  const [customers, setCustomers] = useState([]);
+  const [brands, setBrands] = useState([]);
+  const [rows, setRows] = useState([]);
+  const [search, setSearch] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [editing, setEditing] = useState(false);
 
   useEffect(() => {
-    loadAll()
-  }, [])
+    loadAll();
+  }, []);
+
+  useEffect(() => {
+    const selectedCustomer = customers.find(
+      (c) => String(c.id) === String(form.customer_id)
+    );
+
+    if (!selectedCustomer || !form.brand_symbol) {
+      setForm((prev) => ({ ...prev, customer_brand: "" }));
+      return;
+    }
+
+    const generated = `${form.brand_symbol}-${selectedCustomer.customer_symbol}`;
+    setForm((prev) => ({ ...prev, customer_brand: generated }));
+  }, [form.customer_id, form.brand_symbol, customers]);
 
   async function loadAll() {
     try {
-      setLoading(true)
+      setLoading(true);
 
-      const [bcRows, brandRows, customerRows] = await Promise.all([
-        fetchBrandCustomers(),
-        fetchBrandsLookup(),
+      const [customersData, brandsData, brandCustomerData] = await Promise.all([
         fetchCustomersLookup(),
-      ])
+        fetchBrandsLookup(),
+        fetchBrandCustomers(),
+      ]);
 
-      setRows(bcRows || [])
-      setBrands(brandRows || [])
-      setCustomers(customerRows || [])
-      setSelectedId(bcRows?.[0]?.id ?? null)
+      setCustomers(customersData || []);
+      setBrands(brandsData || []);
+      setRows(brandCustomerData || []);
     } catch (error) {
-      console.error('LOAD BRAND-CUSTOMERS ERROR:', error)
-      alert(error.message || 'Failed to load Brand-Customer page.')
+      console.error("Load error:", error);
+      alert(error.message || "Failed to load data");
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
   }
 
-  function addRow() {
-    const tempId = `temp-${Date.now()}`
-
-    const newRow = {
-      id: tempId,
-      bc_code: nextCode(rows),
-      brand_id: '',
-      customer_id: '',
-      status: 'active',
-      notes: '',
-      is_active: true,
-      brands: null,
-      customers: null,
-      __isNew: true,
-    }
-
-    setRows((prev) => [newRow, ...prev])
-    setSelectedId(tempId)
-    setEditingId(tempId)
+  function clearForm() {
+    setForm(emptyForm);
+    setEditing(false);
   }
 
-  function editRow() {
-    if (!selected) return
-    setEditingId(selected.id)
-  }
-
-  async function saveRow() {
-    if (!selected) return
-
-    if (!selected.brand_id) {
-      alert('Please select a brand.')
-      return
+  async function handleSave() {
+    if (!form.customer_id) {
+      alert("Please select Customer");
+      return;
     }
 
-    if (!selected.customer_id) {
-      alert('Please select a customer.')
-      return
+    if (!form.brand_symbol) {
+      alert("Please select Brand Symbol");
+      return;
+    }
+
+    if (!form.customer_brand) {
+      alert("Customer Brand is empty");
+      return;
     }
 
     try {
+      setSaving(true);
+
       const payload = {
-        bc_code: selected.bc_code,
-        brand_id: selected.brand_id,
-        customer_id: selected.customer_id,
-        status: selected.status || 'active',
-        notes: selected.notes || '',
-        is_active: selected.is_active ?? true,
-      }
+        customer_id: form.customer_id,
+        brand_symbol: form.brand_symbol,
+        customer_brand: form.customer_brand,
+      };
 
-      if (selected.__isNew) {
-        const saved = await insertBrandCustomer(payload)
-        setRows((prev) =>
-          prev.map((row) =>
-            String(row.id) === String(selected.id) ? saved : row
-          )
-        )
-        setSelectedId(saved.id)
+      if (editing && form.id) {
+        await updateBrandCustomer(form.id, payload);
+        alert("Customer Brand updated successfully");
       } else {
-        const saved = await updateBrandCustomer(selected.id, payload)
-        setRows((prev) =>
-          prev.map((row) =>
-            String(row.id) === String(saved.id) ? saved : row
-          )
-        )
-        setSelectedId(saved.id)
+        await insertBrandCustomer(payload);
+        alert("Customer Brand added successfully");
       }
 
-      setEditingId(null)
-      await loadAll()
+      clearForm();
+      await loadAll();
     } catch (error) {
-      console.error('SAVE BRAND-CUSTOMER ERROR:', error)
-      alert(error.message || 'Failed to save Brand-Customer.')
+      console.error("Save error:", error);
+
+      if (
+        error?.message?.includes("brand_customer_customer_brandsymbol_unique_idx")
+      ) {
+        alert("This brand is already linked to this customer.");
+      } else {
+        alert(error.message || "Failed to save");
+      }
+    } finally {
+      setSaving(false);
     }
   }
 
-  async function deleteRow() {
-    if (!selected) return
+  function handleEdit(row) {
+    setForm({
+      id: row.id,
+      customer_id: row.customer_id || "",
+      brand_symbol: row.brand_symbol || "",
+      customer_brand: row.customer_brand || "",
+    });
+    setEditing(true);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
 
-    const ok = window.confirm('Delete this Brand-Customer record?')
-    if (!ok) return
+  async function handleDelete(id) {
+    const ok = window.confirm("Are you sure you want to delete this record?");
+    if (!ok) return;
 
     try {
-      if (selected.__isNew) {
-        const nextRows = rows.filter((x) => String(x.id) !== String(selected.id))
-        setRows(nextRows)
-        setSelectedId(nextRows[0]?.id ?? null)
-        setEditingId(null)
-        return
+      await removeBrandCustomer(id);
+
+      if (form.id === id) {
+        clearForm();
       }
 
-      await removeBrandCustomer(selected.id)
-
-      const nextRows = rows.filter((x) => String(x.id) !== String(selected.id))
-      setRows(nextRows)
-      setSelectedId(nextRows[0]?.id ?? null)
-      setEditingId(null)
+      await loadAll();
+      alert("Deleted successfully");
     } catch (error) {
-      console.error('DELETE BRAND-CUSTOMER ERROR:', error)
-      alert(error.message || 'Failed to delete Brand-Customer.')
+      console.error("Delete error:", error);
+      alert(error.message || "Failed to delete");
     }
   }
 
-  function updateSelected(field, value) {
-    if (!selected) return
+  const customerMap = useMemo(() => {
+    const map = {};
+    customers.forEach((customer) => {
+      map[customer.id] = customer;
+    });
+    return map;
+  }, [customers]);
 
-    setRows((prev) =>
-      prev.map((x) => {
-        if (String(x.id) !== String(selected.id)) return x
+  const filteredRows = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return rows;
 
-        const updated = { ...x, [field]: value }
+    return rows.filter((row) => {
+      const customer = customerMap[row.customer_id] || {};
+      const customerCode = (customer.customer_code || "").toLowerCase();
+      const customerSymbol = (customer.customer_symbol || "").toLowerCase();
+      const customerName = (customer.customer_name || "").toLowerCase();
+      const brandSymbol = (row.brand_symbol || "").toLowerCase();
+      const customerBrand = (row.customer_brand || "").toLowerCase();
 
-        if (field === 'brand_id') {
-          const brand = brands.find((b) => String(b.id) === String(value))
-          updated.brands = brand || null
-        }
-
-        if (field === 'customer_id') {
-          const customer = customers.find((c) => String(c.id) === String(value))
-          updated.customers = customer || null
-        }
-
-        return updated
-      })
-    )
-  }
-
-  if (loading) {
-    return (
-      <div className="bc-page">
-        <style>{styles}</style>
-        Loading Brand-Customer...
-      </div>
-    )
-  }
+      return (
+        customerCode.includes(q) ||
+        customerSymbol.includes(q) ||
+        customerName.includes(q) ||
+        brandSymbol.includes(q) ||
+        customerBrand.includes(q)
+      );
+    });
+  }, [rows, search, customerMap]);
 
   return (
-    <div className="bc-page">
-      <style>{styles}</style>
+    <div className="page-container">
+      <div className="page-header">
+        <h1>Customer Brand</h1>
+        <p>Link each customer with a brand symbol and generate Customer Brand automatically</p>
+      </div>
 
-      <div className="bc-header">
-        <div>
-          <h1>Brand-Customer</h1>
-          <p>Core entity linking Brands and Customers</p>
+      <div className="form-card">
+        <div
+          className="form-grid"
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+            gap: "16px",
+          }}
+        >
+          <div className="form-group">
+            <label>Customer</label>
+            <select
+              value={form.customer_id}
+              onChange={(e) =>
+                setForm((prev) => ({
+                  ...prev,
+                  customer_id: e.target.value,
+                }))
+              }
+            >
+              <option value="">Select Customer</option>
+              {customers.map((customer) => (
+                <option key={customer.id} value={customer.id}>
+                  {customer.customer_code} - {customer.customer_symbol} - {customer.customer_name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="form-group">
+            <label>Brand Symbol</label>
+            <select
+              value={form.brand_symbol}
+              onChange={(e) =>
+                setForm((prev) => ({
+                  ...prev,
+                  brand_symbol: e.target.value,
+                }))
+              }
+            >
+              <option value="">Select Brand Symbol</option>
+              {brands.map((brand) => (
+                <option key={brand.id} value={brand.brand_symbol}>
+                  {brand.brand_symbol}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="form-group">
+            <label>Customer Brand</label>
+            <input
+              type="text"
+              value={form.customer_brand}
+              placeholder="Generated automatically"
+              readOnly
+            />
+          </div>
         </div>
 
-        <div className="bc-toolbar">
-          <button onClick={addRow}>Add</button>
-          <button onClick={editRow} disabled={!selected}>
-            Edit
-          </button>
-          <button onClick={deleteRow} disabled={!selected}>
-            Delete
-          </button>
+        <div
+          className="button-row"
+          style={{ display: "flex", gap: "10px", marginTop: "18px" }}
+        >
           <button
-            className="primary"
-            onClick={saveRow}
-            disabled={String(editingId) !== String(selectedId)}
+            className="btn btn-primary"
+            onClick={handleSave}
+            disabled={saving}
           >
-            Save
+            {saving ? "Saving..." : editing ? "Update" : "Add"}
+          </button>
+
+          <button className="btn btn-secondary" onClick={clearForm}>
+            Clear
           </button>
         </div>
       </div>
 
-      <div className="bc-layout">
-        <div className="bc-main">
-          <div className="bc-card">
-            <h2>Brand-Customer Information</h2>
+      <div className="search-card" style={{ marginTop: "20px" }}>
+        <input
+          type="text"
+          placeholder="Search by Customer Code / Customer Symbol / Customer Name / Brand Symbol / Customer Brand"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+      </div>
 
-            <div className="bc-grid">
-              <Field label="BC Code">
-                <input
-                  value={selected?.bc_code || ''}
-                  readOnly
-                  className="readonly"
-                />
-              </Field>
-
-              <Field label="Brand">
-                <select
-                  value={selected?.brand_id ?? ''}
-                  onChange={(e) => updateSelected('brand_id', e.target.value)}
-                  disabled={isReadOnly}
-                >
-                  <option value="">Select brand...</option>
-                  {brands.map((brand) => (
-                    <option key={brand.id} value={brand.id}>
-                      {brand.brand_code} - {brand.brand_name}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-
-              <Field label="Customer">
-                <select
-                  value={selected?.customer_id ?? ''}
-                  onChange={(e) => updateSelected('customer_id', e.target.value)}
-                  disabled={isReadOnly}
-                >
-                  <option value="">Select customer...</option>
-                  {customers.map((customer) => (
-                    <option key={customer.id} value={customer.id}>
-                      {customer.customer_code} - {customer.customer_name}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-
-              <Field label="Brand Symbol">
-                <input
-                  value={selected?.brands?.brand_symbol || ''}
-                  readOnly
-                  className="readonly"
-                />
-              </Field>
-
-              <Field label="Status">
-                <select
-                  value={selected?.status || 'active'}
-                  onChange={(e) => updateSelected('status', e.target.value)}
-                  disabled={isReadOnly}
-                >
-                  <option value="active">Active</option>
-                  <option value="inactive">Inactive</option>
-                </select>
-              </Field>
-
-              <Field label="Is Active">
-                <select
-                  value={selected?.is_active ? 'true' : 'false'}
-                  onChange={(e) =>
-                    updateSelected('is_active', e.target.value === 'true')
-                  }
-                  disabled={isReadOnly}
-                >
-                  <option value="true">Active</option>
-                  <option value="false">Inactive</option>
-                </select>
-              </Field>
-
-              <Field label="Notes">
-                <input
-                  value={selected?.notes || ''}
-                  onChange={(e) => updateSelected('notes', e.target.value)}
-                  readOnly={isReadOnly}
-                />
-              </Field>
-            </div>
-          </div>
-        </div>
-
-        <div className="bc-side">
-          <div className="bc-card">
-            <h2>Brand-Customer List</h2>
-
-            <table className="bc-table">
-              <thead>
+      <div className="table-card" style={{ marginTop: "20px" }}>
+        {loading ? (
+          <p>Loading...</p>
+        ) : (
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Customer Code</th>
+                <th>Customer Symbol</th>
+                <th>Customer Name</th>
+                <th>Brand Symbol</th>
+                <th>Customer Brand</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredRows.length === 0 ? (
                 <tr>
-                  <th>Code</th>
-                  <th>Brand</th>
-                  <th>Customer</th>
-                  <th>Status</th>
+                  <td colSpan="6" style={{ textAlign: "center" }}>
+                    No data found
+                  </td>
                 </tr>
-              </thead>
-              <tbody>
-                {rows.map((row) => (
-                  <tr
-                    key={row.id}
-                    className={String(row.id) === String(selectedId) ? 'selected' : ''}
-                    onClick={() => {
-                      setSelectedId(row.id)
-                      setEditingId(null)
-                    }}
-                  >
-                    <td>{row.bc_code}</td>
-                    <td>{row.brands?.brand_name || ''}</td>
-                    <td>{row.customers?.customer_name || ''}</td>
-                    <td>{row.status || ''}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
+              ) : (
+                filteredRows.map((row) => {
+                  const customer = customerMap[row.customer_id] || {};
+
+                  return (
+                    <tr key={row.id}>
+                      <td>{customer.customer_code || "-"}</td>
+                      <td>{customer.customer_symbol || "-"}</td>
+                      <td>{customer.customer_name || "-"}</td>
+                      <td>{row.brand_symbol || "-"}</td>
+                      <td>{row.customer_brand || "-"}</td>
+                      <td>
+                        <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                          <button
+                            className="btn btn-edit"
+                            onClick={() => handleEdit(row)}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            className="btn btn-delete"
+                            onClick={() => handleDelete(row.id)}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        )}
       </div>
     </div>
-  )
+  );
 }
-
-const styles = `
-.bc-page {
-  color: #111827;
-}
-.bc-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 16px;
-  margin-bottom: 16px;
-}
-.bc-header h1 {
-  margin: 0 0 4px;
-  font-size: 32px;
-}
-.bc-header p {
-  margin: 0;
-  color: #6b7280;
-}
-.bc-toolbar {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-.bc-toolbar button {
-  padding: 8px 12px;
-  border: 1px solid #cbd5e1;
-  background: white;
-  border-radius: 10px;
-  cursor: pointer;
-}
-.bc-toolbar button.primary {
-  background: #111827;
-  color: white;
-}
-.bc-layout {
-  display: grid;
-  grid-template-columns: 1.3fr 0.9fr;
-  gap: 16px;
-}
-.bc-main,
-.bc-side {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-.bc-card {
-  background: white;
-  border: 1px solid #ddd;
-  border-radius: 14px;
-  padding: 16px;
-}
-.bc-card h2 {
-  margin: 0 0 12px;
-  font-size: 20px;
-}
-.bc-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
-}
-.bc-label {
-  display: block;
-  margin-bottom: 6px;
-  font-size: 12px;
-  color: #6b7280;
-  text-transform: uppercase;
-}
-.bc-field input,
-.bc-field select {
-  width: 100%;
-  padding: 8px;
-  border: 1px solid #cbd5e1;
-  border-radius: 10px;
-  background: white;
-}
-.bc-field .readonly {
-  background: #f1f5f9;
-}
-.bc-table {
-  width: 100%;
-  border-collapse: collapse;
-}
-.bc-table th,
-.bc-table td {
-  border: 1px solid #ddd;
-  padding: 8px;
-  text-align: left;
-}
-.bc-table th {
-  background: #fafafa;
-}
-.bc-table tr.selected {
-  background: #e0e7ff;
-}
-@media (max-width: 1100px) {
-  .bc-layout {
-    grid-template-columns: 1fr;
-  }
-}
-@media (max-width: 800px) {
-  .bc-grid {
-    grid-template-columns: 1fr;
-  }
-  .bc-header {
-    flex-direction: column;
-  }
-}
-`;

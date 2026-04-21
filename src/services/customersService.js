@@ -1,18 +1,24 @@
-import { supabase } from "../lib/supabase";
+import { supabase } from "../lib/supabaseClient";
 
 const CUSTOMERS_TABLE = "customers";
 const BRANDS_TABLE = "brands";
 
+// =======================
+// GET CUSTOMERS
+// =======================
 export async function getCustomers() {
   const { data, error } = await supabase
     .from(CUSTOMERS_TABLE)
     .select("*")
-    .order("created_at", { ascending: false });
+    .order("customer_code", { ascending: false });
 
   if (error) throw error;
   return data || [];
 }
 
+// =======================
+// GET BRANDS (for dropdown only)
+// =======================
 export async function getBrandsForCustomer() {
   const { data, error } = await supabase
     .from(BRANDS_TABLE)
@@ -23,6 +29,9 @@ export async function getBrandsForCustomer() {
   return data || [];
 }
 
+// =======================
+// CREATE CUSTOMER
+// =======================
 export async function createCustomer(payload) {
   const { data, error } = await supabase
     .from(CUSTOMERS_TABLE)
@@ -34,6 +43,9 @@ export async function createCustomer(payload) {
   return data;
 }
 
+// =======================
+// UPDATE CUSTOMER
+// =======================
 export async function updateCustomer(id, payload) {
   const { data, error } = await supabase
     .from(CUSTOMERS_TABLE)
@@ -46,6 +58,9 @@ export async function updateCustomer(id, payload) {
   return data;
 }
 
+// =======================
+// DELETE CUSTOMER
+// =======================
 export async function deleteCustomer(id) {
   const { error } = await supabase
     .from(CUSTOMERS_TABLE)

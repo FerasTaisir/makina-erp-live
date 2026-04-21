@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { supabase } from "./lib/supabase";
+import { supabase } from "./lib/supabaseClient";
 
 const emptyForm = {
   id: null,
@@ -40,7 +40,7 @@ export default function RMPage() {
   const [rows, setRows] = useState([]);
   const [form, setForm] = useState(emptyForm);
   const [selectedId, setSelectedId] = useState(null);
-  const [mode, setMode] = useState("view"); // view | add | edit
+  const [mode, setMode] = useState("view");
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -321,113 +321,115 @@ export default function RMPage() {
 
   return (
     <div style={styles.page}>
-      <h1 style={styles.title}>RM</h1>
+      <div style={styles.topSection}>
+        <h1 style={styles.title}>RM</h1>
 
-      <div style={styles.toolbar}>
-        <button style={styles.button} onClick={handleAdd} disabled={saving}>
-          Add
-        </button>
-        <button style={styles.button} onClick={handleSave} disabled={saving}>
-          Save
-        </button>
-        <button style={styles.button} onClick={handleDelete} disabled={saving}>
-          Delete
-        </button>
-        <button
-          style={styles.button}
-          onClick={() => handleMove("up")}
-          disabled={saving}
-        >
-          Up
-        </button>
-        <button
-          style={styles.button}
-          onClick={() => handleMove("down")}
-          disabled={saving}
-        >
-          Down
-        </button>
-        <button style={styles.button} onClick={resetForm} disabled={saving}>
-          Clear
-        </button>
-      </div>
+        <div style={styles.toolbar}>
+          <button style={styles.button} onClick={handleAdd} disabled={saving}>
+            Add
+          </button>
+          <button style={styles.button} onClick={handleSave} disabled={saving}>
+            Save
+          </button>
+          <button style={styles.button} onClick={handleDelete} disabled={saving}>
+            Delete
+          </button>
+          <button
+            style={styles.button}
+            onClick={() => handleMove("up")}
+            disabled={saving}
+          >
+            Up
+          </button>
+          <button
+            style={styles.button}
+            onClick={() => handleMove("down")}
+            disabled={saving}
+          >
+            Down
+          </button>
+          <button style={styles.button} onClick={resetForm} disabled={saving}>
+            Clear
+          </button>
+        </div>
 
-      <div style={styles.formCard}>
-        <div style={styles.formGrid}>
-          <div>
-            <label style={styles.label}>RM Code</label>
-            <input
-              style={{ ...styles.input, background: "#f3f4f6" }}
-              value={form.rm_code}
-              readOnly
-              placeholder="Auto"
-            />
-          </div>
+        <div style={styles.formCard}>
+          <div style={styles.formGrid}>
+            <div>
+              <label style={styles.label}>RM Code</label>
+              <input
+                style={{ ...styles.input, background: "#f3f4f6" }}
+                value={form.rm_code}
+                readOnly
+                placeholder="Auto"
+              />
+            </div>
 
-          <div>
-            <label style={styles.label}>RM Name</label>
-            <input
-              style={styles.input}
-              value={form.rm_name}
-              onChange={(e) => updateField("rm_name", e.target.value)}
-              placeholder="RM Name"
-            />
-          </div>
+            <div>
+              <label style={styles.label}>RM Name</label>
+              <input
+                style={styles.input}
+                value={form.rm_name}
+                onChange={(e) => updateField("rm_name", e.target.value)}
+                placeholder="RM Name"
+              />
+            </div>
 
-          <div>
-            <label style={styles.label}>Density</label>
-            <input
-              style={styles.input}
-              type="number"
-              step="0.001"
-              value={form.density}
-              onChange={(e) => updateField("density", e.target.value)}
-              placeholder="Density"
-            />
-          </div>
+            <div>
+              <label style={styles.label}>Density</label>
+              <input
+                style={styles.input}
+                type="number"
+                step="0.001"
+                value={form.density}
+                onChange={(e) => updateField("density", e.target.value)}
+                placeholder="Density"
+              />
+            </div>
 
-          <div>
-            <label style={styles.label}>Tally Price ($)</label>
-            <input
-              style={styles.input}
-              type="number"
-              step="0.001"
-              value={form.tally_price}
-              onChange={(e) => handleTallyPriceChange(e.target.value)}
-              placeholder="USD"
-            />
-          </div>
+            <div>
+              <label style={styles.label}>Tally Price ($)</label>
+              <input
+                style={styles.input}
+                type="number"
+                step="0.001"
+                value={form.tally_price}
+                onChange={(e) => handleTallyPriceChange(e.target.value)}
+                placeholder="USD"
+              />
+            </div>
 
-          <div>
-            <label style={styles.label}>Tally Date</label>
-            <input
-              style={{ ...styles.input, background: "#f3f4f6" }}
-              type="date"
-              value={form.tally_date}
-              readOnly
-            />
-          </div>
+            <div>
+              <label style={styles.label}>Tally Date</label>
+              <input
+                style={{ ...styles.input, background: "#f3f4f6" }}
+                type="date"
+                value={form.tally_date}
+                readOnly
+              />
+            </div>
 
-          <div>
-            <label style={styles.label}>Market Price ($)</label>
-            <input
-              style={styles.input}
-              type="number"
-              step="0.001"
-              value={form.market_price}
-              onChange={(e) => handleMarketPriceChange(e.target.value)}
-              placeholder="USD"
-            />
-          </div>
+            <div>
+              <label style={styles.label}>Market Price ($)</label>
+              <input
+                style={styles.input}
+                type="number"
+                step="0.001"
+                value={form.market_price}
+                onChange={(e) => handleMarketPriceChange(e.target.value)}
+                placeholder="USD"
+              />
+            </div>
 
-          <div>
-            <label style={styles.label}>Market Entry Date</label>
-            <input
-              style={{ ...styles.input, background: "#f3f4f6" }}
-              type="date"
-              value={form.market_entry_date}
-              readOnly
-            />
+            <div>
+              <label style={styles.label}>Market Entry Date</label>
+              <input
+                style={{ ...styles.input, background: "#f3f4f6" }}
+                type="date"
+                value={form.market_entry_date}
+                readOnly
+              />
+            </div>
           </div>
         </div>
       </div>
@@ -527,9 +529,9 @@ export default function RMPage() {
 
                     <td style={styles.td}>
                       {isEditing
-                        ? (toNullableNumber(editingRowData.tally_price) !==
+                        ? toNullableNumber(editingRowData.tally_price) !==
                             (row.tally_price ?? null) &&
-                            editingRowData.tally_price !== "")
+                          editingRowData.tally_price !== ""
                           ? todayISO()
                           : row.tally_date ?? ""
                         : row.tally_date ?? ""}
@@ -553,9 +555,9 @@ export default function RMPage() {
 
                     <td style={styles.td}>
                       {isEditing
-                        ? (toNullableNumber(editingRowData.market_price) !==
+                        ? toNullableNumber(editingRowData.market_price) !==
                             (row.market_price ?? null) &&
-                            editingRowData.market_price !== "")
+                          editingRowData.market_price !== ""
                           ? todayISO()
                           : row.market_entry_date ?? ""
                         : row.market_entry_date ?? ""}
@@ -602,8 +604,13 @@ export default function RMPage() {
 
 const styles = {
   page: {
-    background: "#f5f7fb",
-    minHeight: "100%",
+    display: "flex",
+    flexDirection: "column",
+    height: "calc(100vh - 36px)",
+    minHeight: 0,
+  },
+  topSection: {
+    flexShrink: 0,
   },
   title: {
     fontSize: "28px",
@@ -614,6 +621,7 @@ const styles = {
     gap: "8px",
     marginBottom: "14px",
     flexWrap: "wrap",
+    justifyContent: "flex-start",
   },
   button: {
     padding: "9px 14px",
@@ -627,7 +635,7 @@ const styles = {
     border: "1px solid #d9dfeb",
     borderRadius: "10px",
     padding: "16px",
-    marginBottom: "18px",
+    marginBottom: "12px",
   },
   formGrid: {
     display: "grid",
@@ -648,10 +656,13 @@ const styles = {
     boxSizing: "border-box",
   },
   tableWrap: {
+    flex: 1,
+    minHeight: 0,
     background: "#fff",
     border: "1px solid #d9dfeb",
     borderRadius: "10px",
     overflowX: "auto",
+    overflowY: "auto",
   },
   table: {
     width: "100%",
@@ -663,6 +674,9 @@ const styles = {
     borderBottom: "1px solid #d9dfeb",
     background: "#f8fafe",
     whiteSpace: "nowrap",
+    position: "sticky",
+    top: 0,
+    zIndex: 5,
   },
   td: {
     padding: "12px 10px",
