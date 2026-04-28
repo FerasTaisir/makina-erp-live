@@ -7,7 +7,9 @@ import BackupButton from "./BackupButton";
 import BrandCustomerPage from "./BrandCustomerPage";
 import BrandsPage from "./BrandsPage";
 import CustomersPage from "./CustomersPage";
+import FormulaPage from "./FormulaPage";
 import InvoiceDataPage from "./InvoiceDataPage";
+import InvoicePage from "./InvoicePage";
 import PackagingDefinitionsPage from "./PackagingDefinitionsPage";
 import PackingBrandPage from "./PackingBrandPage";
 import PackingMasterPage from "./PackingMasterPage";
@@ -18,6 +20,7 @@ import RMPage from "./RMPage";
 import CustomerItemsPage from "./Pages/CustomerItemsPage";
 import ItemMasterPage from "./Pages/ItemMasterPage";
 import OrderPage from "./Pages/OrderPage";
+import ProductionOrderPage from "./Pages/ProductionOrderPage";
 
 const pages = [
   { key: "brands", label: "Brands", component: BrandsPage },
@@ -25,18 +28,21 @@ const pages = [
   { key: "brand-customer", label: "Brand-Customer", component: BrandCustomerPage },
   { key: "item-master", label: "Item Master", component: ItemMasterPage },
   { key: "customer-items", label: "Customer Items", component: CustomerItemsPage },
+  { key: "formula", label: "Formula", component: FormulaPage },
   { key: "packing-master", label: "Packing Master", component: PackingMasterPage },
-  { key: "packing-definitions", label: "Packaging Definitions", component: PackagingDefinitionsPage },
+  { key: "packing-definitions", label: "Packing Data", component: PackagingDefinitionsPage },
   { key: "packing-brand", label: "Packing Brand", component: PackingBrandPage },
   { key: "packing-store", label: "Packing Store", component: PackingStorePage },
   { key: "pallet-data", label: "Pallet Data", component: PalletDataPage },
   { key: "rm", label: "RM", component: RMPage },
   { key: "invoice-data", label: "Invoice Data", component: InvoiceDataPage },
   { key: "order", label: "Order", component: OrderPage },
+  { key: "production-order", label: "Production Order", component: ProductionOrderPage },
+  { key: "invoice", label: "Invoice", component: InvoicePage },
 ];
 
 export default function App() {
-  const [activePage, setActivePage] = useState("packing-store");
+  const [activePage, setActivePage] = useState("formula");
   const [session, setSession] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [roleRow, setRoleRow] = useState(null);
@@ -57,13 +63,9 @@ export default function App() {
         setSession(data?.session || null);
       } catch (err) {
         console.error(err);
-        if (mounted) {
-          setSession(null);
-        }
+        if (mounted) setSession(null);
       } finally {
-        if (mounted) {
-          setAuthLoading(false);
-        }
+        if (mounted) setAuthLoading(false);
       }
     }
 
@@ -113,9 +115,7 @@ export default function App() {
           setRoleError(err.message || "Failed to load user role.");
         }
       } finally {
-        if (mounted) {
-          setRoleLoading(false);
-        }
+        if (mounted) setRoleLoading(false);
       }
     }
 
@@ -137,16 +137,14 @@ export default function App() {
 
   const allowedPages = useMemo(() => {
     if (!currentUser.userId || !currentUser.role) return [];
-
     if (currentUser.role === "admin") return pages;
     if (currentUser.role === "user") return pages;
-
     return [];
   }, [currentUser]);
 
   useEffect(() => {
     if (!allowedPages.some((page) => page.key === activePage)) {
-      setActivePage(allowedPages[0]?.key || "packing-store");
+      setActivePage(allowedPages[0]?.key || "formula");
     }
   }, [allowedPages, activePage]);
 
@@ -167,9 +165,7 @@ export default function App() {
     );
   }
 
-  if (!session) {
-    return <Login />;
-  }
+  if (!session) return <Login />;
 
   if (roleLoading) {
     return (
@@ -219,7 +215,8 @@ export default function App() {
         <div style={styles.userBox}>
           <div style={styles.userEmail}>{currentUser.email}</div>
           <div style={styles.userRole}>
-            Role: {currentUser.role} | Delete: {currentUser.canDelete ? "Yes" : "No"}
+            Role: {currentUser.role} | Delete:{" "}
+            {currentUser.canDelete ? "Yes" : "No"}
           </div>
         </div>
 
@@ -249,7 +246,9 @@ export default function App() {
       </aside>
 
       <main style={styles.mainContent}>
-        {CurrentPage ? <CurrentPage currentUser={currentUser} /> : null}
+        {CurrentPage ? (
+          <CurrentPage currentUser={currentUser} openPage={setActivePage} />
+        ) : null}
       </main>
     </div>
   );
@@ -280,7 +279,6 @@ const styles = {
     fontWeight: 800,
     marginBottom: "20px",
     textAlign: "center",
-    letterSpacing: "0.5px",
   },
   userBox: {
     background: "#1e293b",
@@ -339,8 +337,6 @@ const styles = {
     borderRadius: "14px",
     padding: "24px 28px",
     boxShadow: "0 8px 26px rgba(15, 23, 42, 0.08)",
-    border: "1px solid #e5e7eb",
-    fontSize: "16px",
     fontWeight: 700,
     color: "#334155",
   },
@@ -349,37 +345,36 @@ const styles = {
     borderRadius: "14px",
     padding: "24px 28px",
     boxShadow: "0 8px 26px rgba(15, 23, 42, 0.08)",
-    border: "1px solid #fecaca",
-    maxWidth: "460px",
-    color: "#7f1d1d",
-    fontSize: "15px",
-    lineHeight: 1.6,
+    color: "#334155",
+    maxWidth: "420px",
+    textAlign: "center",
   },
   errorTitle: {
-    fontSize: "20px",
+    fontSize: "22px",
     fontWeight: 800,
-    marginBottom: "10px",
+    color: "#dc2626",
+    marginBottom: "12px",
   },
   logoutBtn: {
     marginTop: "16px",
-    height: "42px",
+    height: "40px",
     border: "none",
     borderRadius: "10px",
-    padding: "0 18px",
-    fontWeight: 700,
-    cursor: "pointer",
-    background: "#0f172a",
+    background: "#dc2626",
     color: "#fff",
+    fontWeight: 700,
+    padding: "0 18px",
+    cursor: "pointer",
   },
   logoutBtnFull: {
     marginTop: "16px",
-    height: "46px",
+    height: "44px",
     border: "none",
     borderRadius: "10px",
-    padding: "0 18px",
-    fontWeight: 700,
-    cursor: "pointer",
     background: "#dc2626",
     color: "#fff",
+    fontSize: "14px",
+    fontWeight: 700,
+    cursor: "pointer",
   },
 };

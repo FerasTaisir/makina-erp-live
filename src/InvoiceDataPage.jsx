@@ -9,6 +9,12 @@ const CATEGORY_CONFIG = [
     placeholder: "Ex: USD / EUR / AED",
   },
   {
+    key: "currency_exchange",
+    title: "Currency Exchange",
+    description: "Define currency exchange rates",
+    placeholder: "Ex: USD/AED",
+  },
+  {
     key: "payment",
     title: "Payment",
     description: "Define invoice payment method",
@@ -19,6 +25,18 @@ const CATEGORY_CONFIG = [
     title: "Port of Loading",
     description: "Define port of loading",
     placeholder: "Ex: Jebel Ali / Shanghai / Mersin",
+  },
+  {
+    key: "shipping",
+    title: "Shipping",
+    description: "Define shipping method",
+    placeholder: "Ex: By road / By sea",
+  },
+  {
+    key: "hs_code",
+    title: "HS Code",
+    description: "Define HS Code values",
+    placeholder: "Ex: 27101999",
   },
   {
     key: "packing",
@@ -38,11 +56,78 @@ const CATEGORY_CONFIG = [
     description: "Define pricing format",
     placeholder: "Ex: Per Unit / Per Carton / Per MT / Lump Sum",
   },
+  {
+    key: "order_cancelation",
+    title: "Order Cancelation",
+    description: "Define order cancelation terms",
+    placeholder: "Ex: Not allowed after confirmation",
+  },
+  {
+    key: "delivery",
+    title: "Delivery",
+    description: "Define delivery terms",
+    placeholder: "Ex: 15 working days after payment",
+  },
+  {
+    key: "brand",
+    title: "Brand",
+    description: "Define invoice brand terms",
+    placeholder: "Ex: MAKINALUBE",
+  },
+  {
+    key: "manufacturer",
+    title: "Manufacturer",
+    description: "Define manufacturer details",
+    placeholder: "Ex: Makina Lubricants",
+  },
+  {
+    key: "country_of_origin",
+    title: "Country of Origin",
+    description: "Define country of origin values",
+    placeholder: "Ex: UAE / Turkey / China",
+  },
+  {
+    key: "others",
+    title: "Others",
+    description: "Define other invoice terms",
+    placeholder: "Ex: Prices subject to change",
+  },
+  {
+    key: "bank_details",
+    title: "Bank Details",
+    description: "Define bank details used in invoice",
+    placeholder: "Enter bank details",
+  },
+  {
+    key: "fixed_profit_pct",
+    title: "Fixed Profit %",
+    description: "Define fixed profit percentage for invoice calculation",
+    placeholder: "Ex: 10",
+  },
 ];
+
+const EMPTY_BANK_DETAILS = {
+  bank_name: "",
+  account_name: "",
+  account_number: "",
+  iban: "",
+  swift_code: "",
+};
+
+const EMPTY_CURRENCY_EXCHANGE = {
+  from_currency: "",
+  to_currency: "",
+  exchange_rate: "",
+};
 
 function createInitialForms() {
   return CATEGORY_CONFIG.reduce((acc, item) => {
-    acc[item.key] = { id: "", value: "" };
+    acc[item.key] = {
+      id: "",
+      value: "",
+      bankDetails: { ...EMPTY_BANK_DETAILS },
+      currencyExchange: { ...EMPTY_CURRENCY_EXCHANGE },
+    };
     return acc;
   }, {});
 }
@@ -61,6 +146,81 @@ function groupRowsByCategory(rows) {
       .sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0));
     return acc;
   }, {});
+}
+
+function formatBankDetails(bankDetails) {
+  return JSON.stringify({
+    bank_name: bankDetails.bank_name || "",
+    account_name: bankDetails.account_name || "",
+    account_number: bankDetails.account_number || "",
+    iban: bankDetails.iban || "",
+    swift_code: bankDetails.swift_code || "",
+  });
+}
+
+function parseBankDetails(value) {
+  if (!value) return { ...EMPTY_BANK_DETAILS };
+
+  try {
+    const parsed = JSON.parse(value);
+    return {
+      bank_name: parsed.bank_name || "",
+      account_name: parsed.account_name || "",
+      account_number: parsed.account_number || "",
+      iban: parsed.iban || "",
+      swift_code: parsed.swift_code || "",
+    };
+  } catch {
+    return { ...EMPTY_BANK_DETAILS };
+  }
+}
+
+function bankDetailsToSearchText(value) {
+  const bank = parseBankDetails(value);
+  return [
+    bank.bank_name,
+    bank.account_name,
+    bank.account_number,
+    bank.iban,
+    bank.swift_code,
+  ]
+    .join(" ")
+    .toLowerCase();
+}
+
+function formatCurrencyExchange(currencyExchange) {
+  return JSON.stringify({
+    from_currency: currencyExchange.from_currency || "",
+    to_currency: currencyExchange.to_currency || "",
+    exchange_rate: currencyExchange.exchange_rate || "",
+  });
+}
+
+function parseCurrencyExchange(value) {
+  if (!value) return { ...EMPTY_CURRENCY_EXCHANGE };
+
+  try {
+    const parsed = JSON.parse(value);
+    return {
+      from_currency: parsed.from_currency || "",
+      to_currency: parsed.to_currency || "",
+      exchange_rate: parsed.exchange_rate || "",
+    };
+  } catch {
+    return { ...EMPTY_CURRENCY_EXCHANGE };
+  }
+}
+
+function currencyExchangeToSearchText(value) {
+  const exchange = parseCurrencyExchange(value);
+  return [
+    exchange.from_currency,
+    exchange.to_currency,
+    exchange.exchange_rate,
+    `${exchange.from_currency}/${exchange.to_currency}`,
+  ]
+    .join(" ")
+    .toLowerCase();
 }
 
 export default function InvoiceDataPage() {
@@ -103,7 +263,8 @@ export default function InvoiceDataPage() {
   const groupedRows = useMemo(() => groupRowsByCategory(rows), [rows]);
 
   const activeSection =
-    CATEGORY_CONFIG.find((item) => item.key === activeCategory) || CATEGORY_CONFIG[0];
+    CATEGORY_CONFIG.find((item) => item.key === activeCategory) ||
+    CATEGORY_CONFIG[0];
 
   const activeRows = useMemo(() => {
     const baseRows = groupedRows[activeCategory] || [];
@@ -111,9 +272,17 @@ export default function InvoiceDataPage() {
 
     if (!q) return baseRows;
 
-    return baseRows.filter((row) =>
-      String(row.value || "").toLowerCase().includes(q)
-    );
+    return baseRows.filter((row) => {
+      if (activeCategory === "bank_details") {
+        return bankDetailsToSearchText(row.value || "").includes(q);
+      }
+
+      if (activeCategory === "currency_exchange") {
+        return currencyExchangeToSearchText(row.value || "").includes(q);
+      }
+
+      return String(row.value || "").toLowerCase().includes(q);
+    });
   }, [groupedRows, activeCategory, search]);
 
   function setCategoryMessage(category, text) {
@@ -139,12 +308,40 @@ export default function InvoiceDataPage() {
     }));
   }
 
+  function handleBankInputChange(field, value) {
+    setForms((prev) => ({
+      ...prev,
+      bank_details: {
+        ...prev.bank_details,
+        bankDetails: {
+          ...prev.bank_details.bankDetails,
+          [field]: value,
+        },
+      },
+    }));
+  }
+
+  function handleCurrencyExchangeInputChange(field, value) {
+    setForms((prev) => ({
+      ...prev,
+      currency_exchange: {
+        ...prev.currency_exchange,
+        currencyExchange: {
+          ...prev.currency_exchange.currencyExchange,
+          [field]: value,
+        },
+      },
+    }));
+  }
+
   function clearForm(category) {
     setForms((prev) => ({
       ...prev,
       [category]: {
         id: "",
         value: "",
+        bankDetails: { ...EMPTY_BANK_DETAILS },
+        currencyExchange: { ...EMPTY_CURRENCY_EXCHANGE },
       },
     }));
     clearCategoryFeedback(category);
@@ -156,8 +353,68 @@ export default function InvoiceDataPage() {
       .sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0));
   }
 
+  function getCurrentValue(category) {
+    if (category === "bank_details") {
+      const bankDetails = forms.bank_details?.bankDetails || EMPTY_BANK_DETAILS;
+      return formatBankDetails(bankDetails);
+    }
+
+    if (category === "currency_exchange") {
+      const currencyExchange =
+        forms.currency_exchange?.currencyExchange || EMPTY_CURRENCY_EXCHANGE;
+      return formatCurrencyExchange(currencyExchange);
+    }
+
+    return forms[category]?.value?.trim() || "";
+  }
+
+  function validateBankDetails() {
+    const bankDetails = forms.bank_details?.bankDetails || EMPTY_BANK_DETAILS;
+
+    if (!bankDetails.bank_name.trim()) return "Please enter Bank Name.";
+    if (!bankDetails.account_name.trim()) return "Please enter Account Name.";
+    if (!bankDetails.account_number.trim()) return "Please enter Account Number.";
+    if (!bankDetails.iban.trim()) return "Please enter IBAN.";
+    if (!bankDetails.swift_code.trim()) return "Please enter SWIFT CODE.";
+
+    return "";
+  }
+
+  function validateCurrencyExchange() {
+    const exchange =
+      forms.currency_exchange?.currencyExchange || EMPTY_CURRENCY_EXCHANGE;
+
+    if (!exchange.from_currency.trim()) return "Please enter From Currency.";
+    if (!exchange.to_currency.trim()) return "Please enter To Currency.";
+    if (!exchange.exchange_rate.trim()) return "Please enter Exchange Rate.";
+
+    const rate = Number(exchange.exchange_rate);
+    if (Number.isNaN(rate) || rate <= 0) {
+      return "Exchange Rate must be a number greater than 0.";
+    }
+
+    return "";
+  }
+
   async function handleAdd(category) {
-    const currentValue = forms[category]?.value?.trim() || "";
+    if (category === "bank_details") {
+      const bankError = validateBankDetails();
+      if (bankError) {
+        setCategoryError(category, bankError);
+        return;
+      }
+    }
+
+    if (category === "currency_exchange") {
+      const exchangeError = validateCurrencyExchange();
+      if (exchangeError) {
+        setCategoryError(category, exchangeError);
+        return;
+      }
+    }
+
+    const currentValue = getCurrentValue(category);
+
     if (!currentValue) {
       setCategoryError(category, "Please enter a value first.");
       return;
@@ -168,9 +425,39 @@ export default function InvoiceDataPage() {
       clearCategoryFeedback(category);
 
       const categoryRows = getCategoryRows(category);
-      const duplicate = categoryRows.find(
-        (row) => String(row.value || "").trim().toLowerCase() === currentValue.toLowerCase()
-      );
+
+      const duplicate = categoryRows.find((row) => {
+        if (category === "bank_details") {
+          const oldBank = parseBankDetails(row.value || "");
+          const newBank = forms.bank_details?.bankDetails || EMPTY_BANK_DETAILS;
+
+          return (
+            oldBank.bank_name.trim().toLowerCase() ===
+              newBank.bank_name.trim().toLowerCase() &&
+            oldBank.account_number.trim().toLowerCase() ===
+              newBank.account_number.trim().toLowerCase()
+          );
+        }
+
+        if (category === "currency_exchange") {
+          const oldExchange = parseCurrencyExchange(row.value || "");
+          const newExchange =
+            forms.currency_exchange?.currencyExchange ||
+            EMPTY_CURRENCY_EXCHANGE;
+
+          return (
+            oldExchange.from_currency.trim().toLowerCase() ===
+              newExchange.from_currency.trim().toLowerCase() &&
+            oldExchange.to_currency.trim().toLowerCase() ===
+              newExchange.to_currency.trim().toLowerCase()
+          );
+        }
+
+        return (
+          String(row.value || "").trim().toLowerCase() ===
+          currentValue.toLowerCase()
+        );
+      });
 
       if (duplicate) {
         setCategoryError(category, "This value already exists.");
@@ -179,7 +466,8 @@ export default function InvoiceDataPage() {
 
       const nextSortOrder =
         categoryRows.length > 0
-          ? Math.max(...categoryRows.map((row) => Number(row.sort_order || 0))) + 1
+          ? Math.max(...categoryRows.map((row) => Number(row.sort_order || 0))) +
+            1
           : 1;
 
       const payload = {
@@ -189,7 +477,9 @@ export default function InvoiceDataPage() {
         is_active: true,
       };
 
-      const { error } = await supabase.from("invoice_definitions").insert([payload]);
+      const { error } = await supabase
+        .from("invoice_definitions")
+        .insert([payload]);
 
       if (error) throw error;
 
@@ -205,7 +495,23 @@ export default function InvoiceDataPage() {
   }
 
   async function handleSave(category) {
-    const currentValue = forms[category]?.value?.trim() || "";
+    if (category === "bank_details") {
+      const bankError = validateBankDetails();
+      if (bankError) {
+        setCategoryError(category, bankError);
+        return;
+      }
+    }
+
+    if (category === "currency_exchange") {
+      const exchangeError = validateCurrencyExchange();
+      if (exchangeError) {
+        setCategoryError(category, exchangeError);
+        return;
+      }
+    }
+
+    const currentValue = getCurrentValue(category);
     const currentId = forms[category]?.id || "";
 
     if (!currentValue) {
@@ -223,11 +529,41 @@ export default function InvoiceDataPage() {
       clearCategoryFeedback(category);
 
       const categoryRows = getCategoryRows(category);
-      const duplicate = categoryRows.find(
-        (row) =>
-          String(row.id) !== String(currentId) &&
-          String(row.value || "").trim().toLowerCase() === currentValue.toLowerCase()
-      );
+
+      const duplicate = categoryRows.find((row) => {
+        if (String(row.id) === String(currentId)) return false;
+
+        if (category === "bank_details") {
+          const oldBank = parseBankDetails(row.value || "");
+          const newBank = forms.bank_details?.bankDetails || EMPTY_BANK_DETAILS;
+
+          return (
+            oldBank.bank_name.trim().toLowerCase() ===
+              newBank.bank_name.trim().toLowerCase() &&
+            oldBank.account_number.trim().toLowerCase() ===
+              newBank.account_number.trim().toLowerCase()
+          );
+        }
+
+        if (category === "currency_exchange") {
+          const oldExchange = parseCurrencyExchange(row.value || "");
+          const newExchange =
+            forms.currency_exchange?.currencyExchange ||
+            EMPTY_CURRENCY_EXCHANGE;
+
+          return (
+            oldExchange.from_currency.trim().toLowerCase() ===
+              newExchange.from_currency.trim().toLowerCase() &&
+            oldExchange.to_currency.trim().toLowerCase() ===
+              newExchange.to_currency.trim().toLowerCase()
+          );
+        }
+
+        return (
+          String(row.value || "").trim().toLowerCase() ===
+          currentValue.toLowerCase()
+        );
+      });
 
       if (duplicate) {
         setCategoryError(category, "This value already exists.");
@@ -253,20 +589,44 @@ export default function InvoiceDataPage() {
   }
 
   function handleEdit(category, row) {
-    setForms((prev) => ({
-      ...prev,
-      [category]: {
-        id: row.id || "",
-        value: row.value || "",
-      },
-    }));
+    if (category === "bank_details") {
+      setForms((prev) => ({
+        ...prev,
+        [category]: {
+          id: row.id || "",
+          value: row.value || "",
+          bankDetails: parseBankDetails(row.value || ""),
+          currencyExchange: { ...EMPTY_CURRENCY_EXCHANGE },
+        },
+      }));
+    } else if (category === "currency_exchange") {
+      setForms((prev) => ({
+        ...prev,
+        [category]: {
+          id: row.id || "",
+          value: row.value || "",
+          bankDetails: { ...EMPTY_BANK_DETAILS },
+          currencyExchange: parseCurrencyExchange(row.value || ""),
+        },
+      }));
+    } else {
+      setForms((prev) => ({
+        ...prev,
+        [category]: {
+          id: row.id || "",
+          value: row.value || "",
+          bankDetails: { ...EMPTY_BANK_DETAILS },
+          currencyExchange: { ...EMPTY_CURRENCY_EXCHANGE },
+        },
+      }));
+    }
 
     clearCategoryFeedback(category);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   async function handleDelete(category, row) {
-    const ok = window.confirm(`Delete this value?\n\n${row.value || ""}`);
+    const ok = window.confirm(`Delete this value?`);
     if (!ok) return;
 
     try {
@@ -296,7 +656,9 @@ export default function InvoiceDataPage() {
 
   async function handleMove(category, row, direction) {
     const categoryRows = getCategoryRows(category);
-    const currentIndex = categoryRows.findIndex((item) => String(item.id) === String(row.id));
+    const currentIndex = categoryRows.findIndex(
+      (item) => String(item.id) === String(row.id)
+    );
     if (currentIndex === -1) return;
 
     const targetIndex = direction === "up" ? currentIndex - 1 : currentIndex + 1;
@@ -333,8 +695,61 @@ export default function InvoiceDataPage() {
     }
   }
 
-  const form = forms[activeCategory] || { id: "", value: "" };
+  function renderValueCell(row) {
+    if (activeCategory === "bank_details") {
+      const bank = parseBankDetails(row.value || "");
+
+      return (
+        <div className="bank-preview">
+          <div>
+            <strong>Bank Name:</strong> {bank.bank_name}
+          </div>
+          <div>
+            <strong>Account Name:</strong> {bank.account_name}
+          </div>
+          <div>
+            <strong>Account Number:</strong> {bank.account_number}
+          </div>
+          <div>
+            <strong>IBAN:</strong> {bank.iban}
+          </div>
+          <div>
+            <strong>SWIFT CODE:</strong> {bank.swift_code}
+          </div>
+        </div>
+      );
+    }
+
+    if (activeCategory === "currency_exchange") {
+      const exchange = parseCurrencyExchange(row.value || "");
+
+      return (
+        <div className="exchange-preview">
+          <div>
+            <strong>Currency:</strong>{" "}
+            {exchange.from_currency}/{exchange.to_currency}
+          </div>
+          <div>
+            <strong>Exchange Rate:</strong> {exchange.exchange_rate}
+          </div>
+        </div>
+      );
+    }
+
+    return row.value || "";
+  }
+
+  const form = forms[activeCategory] || {
+    id: "",
+    value: "",
+    bankDetails: { ...EMPTY_BANK_DETAILS },
+    currencyExchange: { ...EMPTY_CURRENCY_EXCHANGE },
+  };
+
   const saving = !!savingMap[activeCategory];
+  const bankForm = forms.bank_details?.bankDetails || EMPTY_BANK_DETAILS;
+  const exchangeForm =
+    forms.currency_exchange?.currencyExchange || EMPTY_CURRENCY_EXCHANGE;
 
   return (
     <div className="page-shell">
@@ -352,7 +767,9 @@ export default function InvoiceDataPage() {
               <button
                 key={section.key}
                 type="button"
-                className={`category-tab ${activeCategory === section.key ? "active" : ""}`}
+                className={`category-tab ${
+                  activeCategory === section.key ? "active" : ""
+                }`}
                 onClick={() => {
                   setActiveCategory(section.key);
                   setSearch("");
@@ -384,45 +801,268 @@ export default function InvoiceDataPage() {
               </div>
             </div>
 
-            <div className="form-grid single-col">
-              <div className="form-group">
-                <label>{activeSection.title}</label>
-                <input
-                  type="text"
-                  value={form.value}
-                  onChange={(e) => handleInputChange(activeCategory, e.target.value)}
-                  placeholder={activeSection.placeholder}
-                />
+            {activeCategory === "bank_details" ? (
+              <div className="bank-form-grid">
+                <div className="form-group">
+                  <label>Bank Name</label>
+                  <input
+                    type="text"
+                    value={bankForm.bank_name}
+                    onChange={(e) =>
+                      handleBankInputChange("bank_name", e.target.value)
+                    }
+                    placeholder="National Bank of Fujairah"
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label>Account Name</label>
+                  <input
+                    type="text"
+                    value={bankForm.account_name}
+                    onChange={(e) =>
+                      handleBankInputChange("account_name", e.target.value)
+                    }
+                    placeholder="Makina Grease and Lubricants Manufacturing LLC"
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label>Account Number</label>
+                  <input
+                    type="text"
+                    value={bankForm.account_number}
+                    onChange={(e) =>
+                      handleBankInputChange("account_number", e.target.value)
+                    }
+                    placeholder="012001533116"
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label>IBAN</label>
+                  <input
+                    type="text"
+                    value={bankForm.iban}
+                    onChange={(e) =>
+                      handleBankInputChange("iban", e.target.value)
+                    }
+                    placeholder="AE640380000012001533116"
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label>SWIFT CODE</label>
+                  <input
+                    type="text"
+                    value={bankForm.swift_code}
+                    onChange={(e) =>
+                      handleBankInputChange("swift_code", e.target.value)
+                    }
+                    placeholder="NBFUAEAFDXB"
+                  />
+                </div>
+
+                <div className="form-actions">
+                  <button
+                    type="button"
+                    onClick={() => handleAdd(activeCategory)}
+                    disabled={saving}
+                  >
+                    Add
+                  </button>
+
+                  <button
+                    type="button"
+                    className="btn-edit"
+                    onClick={() => handleSave(activeCategory)}
+                    disabled={saving || !form.id}
+                  >
+                    Save
+                  </button>
+
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={() => clearForm(activeCategory)}
+                    disabled={saving}
+                  >
+                    Clear
+                  </button>
+                </div>
               </div>
+            ) : activeCategory === "currency_exchange" ? (
+              <div className="exchange-form-grid">
+                <div className="form-group">
+                  <label>From Currency</label>
+                  <input
+                    type="text"
+                    value={exchangeForm.from_currency}
+                    onChange={(e) =>
+                      handleCurrencyExchangeInputChange(
+                        "from_currency",
+                        e.target.value.toUpperCase()
+                      )
+                    }
+                    placeholder="USD"
+                  />
+                </div>
 
-              <div className="form-actions">
-                <button
-                  type="button"
-                  onClick={() => handleAdd(activeCategory)}
-                  disabled={saving}
-                >
-                  Add
-                </button>
+                <div className="form-group">
+                  <label>To Currency</label>
+                  <input
+                    type="text"
+                    value={exchangeForm.to_currency}
+                    onChange={(e) =>
+                      handleCurrencyExchangeInputChange(
+                        "to_currency",
+                        e.target.value.toUpperCase()
+                      )
+                    }
+                    placeholder="AED"
+                  />
+                </div>
 
-                <button
-                  type="button"
-                  className="btn-edit"
-                  onClick={() => handleSave(activeCategory)}
-                  disabled={saving || !form.id}
-                >
-                  Save
-                </button>
+                <div className="form-group">
+                  <label>Exchange Rate</label>
+                  <input
+                    type="number"
+                    step="0.000001"
+                    value={exchangeForm.exchange_rate}
+                    onChange={(e) =>
+                      handleCurrencyExchangeInputChange(
+                        "exchange_rate",
+                        e.target.value
+                      )
+                    }
+                    placeholder="3.6725"
+                  />
+                </div>
 
-                <button
-                  type="button"
-                  className="btn-secondary"
-                  onClick={() => clearForm(activeCategory)}
-                  disabled={saving}
-                >
-                  Clear
-                </button>
+                <div className="quick-values exchange-quick-values">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleCurrencyExchangeInputChange("from_currency", "USD");
+                      handleCurrencyExchangeInputChange("to_currency", "AED");
+                    }}
+                  >
+                    USD/AED
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleCurrencyExchangeInputChange("from_currency", "USD");
+                      handleCurrencyExchangeInputChange("to_currency", "EUR");
+                    }}
+                  >
+                    USD/EUR
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleCurrencyExchangeInputChange("from_currency", "USD");
+                      handleCurrencyExchangeInputChange("to_currency", "SYP");
+                    }}
+                  >
+                    USD/SYP
+                  </button>
+                </div>
+
+                <div className="form-actions">
+                  <button
+                    type="button"
+                    onClick={() => handleAdd(activeCategory)}
+                    disabled={saving}
+                  >
+                    Add
+                  </button>
+
+                  <button
+                    type="button"
+                    className="btn-edit"
+                    onClick={() => handleSave(activeCategory)}
+                    disabled={saving || !form.id}
+                  >
+                    Save
+                  </button>
+
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={() => clearForm(activeCategory)}
+                    disabled={saving}
+                  >
+                    Clear
+                  </button>
+                </div>
               </div>
-            </div>
+            ) : (
+              <div className="form-grid single-col">
+                <div className="form-group">
+                  <label>{activeSection.title}</label>
+                  <input
+                    type="text"
+                    value={form.value}
+                    onChange={(e) =>
+                      handleInputChange(activeCategory, e.target.value)
+                    }
+                    placeholder={activeSection.placeholder}
+                  />
+                </div>
+
+                {activeCategory === "shipping" ? (
+                  <div className="quick-values">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleInputChange(activeCategory, "By road")
+                      }
+                    >
+                      By road
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleInputChange(activeCategory, "By sea")
+                      }
+                    >
+                      By sea
+                    </button>
+                  </div>
+                ) : null}
+
+                <div className="form-actions">
+                  <button
+                    type="button"
+                    onClick={() => handleAdd(activeCategory)}
+                    disabled={saving}
+                  >
+                    Add
+                  </button>
+
+                  <button
+                    type="button"
+                    className="btn-edit"
+                    onClick={() => handleSave(activeCategory)}
+                    disabled={saving || !form.id}
+                  >
+                    Save
+                  </button>
+
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={() => clearForm(activeCategory)}
+                    disabled={saving}
+                  >
+                    Clear
+                  </button>
+                </div>
+              </div>
+            )}
 
             {messages[activeCategory] ? (
               <div className="alert success">{messages[activeCategory]}</div>
@@ -451,7 +1091,7 @@ export default function InvoiceDataPage() {
                       {activeRows.map((row, index) => (
                         <tr key={row.id}>
                           <td>{index + 1}</td>
-                          <td>{row.value || ""}</td>
+                          <td>{renderValueCell(row)}</td>
                           <td>
                             <div className="table-actions">
                               <button
@@ -465,7 +1105,9 @@ export default function InvoiceDataPage() {
                               <button
                                 type="button"
                                 className="btn-order"
-                                onClick={() => handleMove(activeCategory, row, "up")}
+                                onClick={() =>
+                                  handleMove(activeCategory, row, "up")
+                                }
                                 disabled={saving || index === 0}
                                 title="Move Up"
                               >
@@ -475,8 +1117,12 @@ export default function InvoiceDataPage() {
                               <button
                                 type="button"
                                 className="btn-order"
-                                onClick={() => handleMove(activeCategory, row, "down")}
-                                disabled={saving || index === activeRows.length - 1}
+                                onClick={() =>
+                                  handleMove(activeCategory, row, "down")
+                                }
+                                disabled={
+                                  saving || index === activeRows.length - 1
+                                }
                                 title="Move Down"
                               >
                                 ↓
@@ -485,7 +1131,9 @@ export default function InvoiceDataPage() {
                               <button
                                 type="button"
                                 className="btn-delete"
-                                onClick={() => handleDelete(activeCategory, row)}
+                                onClick={() =>
+                                  handleDelete(activeCategory, row)
+                                }
                               >
                                 Delete
                               </button>
@@ -616,6 +1264,17 @@ export default function InvoiceDataPage() {
         .single-col {
           grid-template-columns: 1fr;
         }
+        .bank-form-grid,
+        .exchange-form-grid {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 14px;
+        }
+        .bank-form-grid .form-actions,
+        .exchange-form-grid .form-actions,
+        .exchange-form-grid .exchange-quick-values {
+          grid-column: 1 / -1;
+        }
         .form-group {
           display: flex;
           flex-direction: column;
@@ -641,7 +1300,8 @@ export default function InvoiceDataPage() {
           gap: 10px;
         }
         .form-actions button,
-        .table-actions button {
+        .table-actions button,
+        .quick-values button {
           height: 42px;
           border-radius: 10px;
           padding: 0 16px;
@@ -653,6 +1313,16 @@ export default function InvoiceDataPage() {
         .form-actions button:first-child {
           background: #111827;
           color: #fff;
+        }
+        .quick-values {
+          display: flex;
+          gap: 10px;
+          flex-wrap: wrap;
+        }
+        .quick-values button {
+          background: #f8fafc;
+          color: #111827;
+          border: 1px solid #cbd5e1;
         }
         .btn-secondary {
           background: #e2e8f0;
@@ -714,6 +1384,7 @@ export default function InvoiceDataPage() {
           border-bottom: 1px solid #e5e7eb;
           text-align: left;
           font-size: 14px;
+          vertical-align: top;
         }
         .data-table th {
           background: #f8fafc;
@@ -728,6 +1399,17 @@ export default function InvoiceDataPage() {
           gap: 8px;
           flex-wrap: wrap;
         }
+        .bank-preview,
+        .exchange-preview {
+          display: grid;
+          gap: 4px;
+          line-height: 1.5;
+          color: #334155;
+        }
+        .bank-preview strong,
+        .exchange-preview strong {
+          color: #0f172a;
+        }
         .empty-state {
           padding: 24px;
           text-align: center;
@@ -740,6 +1422,12 @@ export default function InvoiceDataPage() {
           }
           .category-menu-card {
             position: static;
+          }
+        }
+        @media (max-width: 800px) {
+          .bank-form-grid,
+          .exchange-form-grid {
+            grid-template-columns: 1fr;
           }
         }
       `}</style>

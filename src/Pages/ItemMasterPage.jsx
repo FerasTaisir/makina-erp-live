@@ -9,7 +9,6 @@ import {
 const emptyForm = {
   item_code: "",
   item_name: "",
-  density: "",
   notes: "",
   status: "active",
 };
@@ -45,6 +44,11 @@ export default function ItemMasterPage() {
 
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+
+  const [sortConfig, setSortConfig] = useState({
+    key: "item_code",
+    direction: "asc",
+  });
 
   async function loadData() {
     try {
@@ -101,6 +105,27 @@ export default function ItemMasterPage() {
     });
   }
 
+  function handleSort(key) {
+    setSortConfig((prev) => {
+      if (prev.key === key) {
+        return {
+          key,
+          direction: prev.direction === "asc" ? "desc" : "asc",
+        };
+      }
+
+      return {
+        key,
+        direction: "asc",
+      };
+    });
+  }
+
+  function getSortIcon(key) {
+    if (sortConfig.key !== key) return "↕";
+    return sortConfig.direction === "asc" ? "↑" : "↓";
+  }
+
   async function handleSave(e) {
     e.preventDefault();
 
@@ -117,10 +142,6 @@ export default function ItemMasterPage() {
       const payload = {
         item_code: form.item_code.trim(),
         item_name: form.item_name.trim(),
-        density:
-          form.density === "" || form.density === null
-            ? null
-            : Number(form.density),
         notes: form.notes.trim() || null,
         status: form.status || "active",
       };
@@ -162,7 +183,6 @@ export default function ItemMasterPage() {
     setForm({
       item_code: row.item_code || "",
       item_name: row.item_name || "",
-      density: row.density ?? "",
       notes: row.notes || "",
       status: row.status || "active",
     });
@@ -213,12 +233,34 @@ export default function ItemMasterPage() {
       return (
         String(row.item_code || "").toLowerCase().includes(q) ||
         String(row.item_name || "").toLowerCase().includes(q) ||
-        String(row.density ?? "").toLowerCase().includes(q) ||
         String(row.notes || "").toLowerCase().includes(q) ||
         String(row.status || "").toLowerCase().includes(q)
       );
     });
   }, [rows, search]);
+
+  const sortedRows = useMemo(() => {
+    const data = [...filteredRows];
+
+    data.sort((a, b) => {
+      let valueA = a?.[sortConfig.key];
+      let valueB = b?.[sortConfig.key];
+
+      if (sortConfig.key === "item_code") {
+        valueA = extractItemCodeNumber(valueA);
+        valueB = extractItemCodeNumber(valueB);
+      } else {
+        valueA = String(valueA || "").toLowerCase();
+        valueB = String(valueB || "").toLowerCase();
+      }
+
+      if (valueA < valueB) return sortConfig.direction === "asc" ? -1 : 1;
+      if (valueA > valueB) return sortConfig.direction === "asc" ? 1 : -1;
+      return 0;
+    });
+
+    return data;
+  }, [filteredRows, sortConfig]);
 
   return (
     <div className="page-shell">
@@ -248,18 +290,6 @@ export default function ItemMasterPage() {
               value={form.item_name}
               onChange={handleChange}
               placeholder="Item Name"
-            />
-          </div>
-
-          <div className="form-group">
-            <label>Density</label>
-            <input
-              type="number"
-              step="any"
-              name="density"
-              value={form.density}
-              onChange={handleChange}
-              placeholder="Density"
             />
           </div>
 
@@ -314,7 +344,7 @@ export default function ItemMasterPage() {
         <div className="toolbar-card-inner">
           <input
             type="text"
-            placeholder="Search by code, name, density..."
+            placeholder="Search by code, name, notes..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="search-input"
@@ -329,30 +359,60 @@ export default function ItemMasterPage() {
               <thead>
                 <tr>
                   <th>#</th>
-                  <th>Code</th>
-                  <th>Item Name</th>
-                  <th>Density</th>
-                  <th>Notes</th>
-                  <th>Status</th>
+                  <th>
+                    <button
+                      type="button"
+                      className="sort-header"
+                      onClick={() => handleSort("item_code")}
+                    >
+                      Code <span>{getSortIcon("item_code")}</span>
+                    </button>
+                  </th>
+                  <th>
+                    <button
+                      type="button"
+                      className="sort-header"
+                      onClick={() => handleSort("item_name")}
+                    >
+                      Item Name <span>{getSortIcon("item_name")}</span>
+                    </button>
+                  </th>
+                  <th>
+                    <button
+                      type="button"
+                      className="sort-header"
+                      onClick={() => handleSort("notes")}
+                    >
+                      Notes <span>{getSortIcon("notes")}</span>
+                    </button>
+                  </th>
+                  <th>
+                    <button
+                      type="button"
+                      className="sort-header"
+                      onClick={() => handleSort("status")}
+                    >
+                      Status <span>{getSortIcon("status")}</span>
+                    </button>
+                  </th>
                   <th>Edit</th>
                   <th>Delete</th>
                 </tr>
               </thead>
 
               <tbody>
-                {filteredRows.length === 0 ? (
+                {sortedRows.length === 0 ? (
                   <tr>
-                    <td colSpan="8" className="empty-cell">
+                    <td colSpan="7" className="empty-cell">
                       No items found.
                     </td>
                   </tr>
                 ) : (
-                  filteredRows.map((row, index) => (
+                  sortedRows.map((row, index) => (
                     <tr key={row.id}>
                       <td>{index + 1}</td>
                       <td>{row.item_code}</td>
                       <td>{row.item_name}</td>
-                      <td>{row.density ?? "-"}</td>
                       <td>{row.notes || "-"}</td>
                       <td>
                         <span
@@ -437,7 +497,7 @@ export default function ItemMasterPage() {
         }
 
         .item-form-grid {
-          grid-template-columns: repeat(4, minmax(0, 1fr));
+          grid-template-columns: repeat(3, minmax(0, 1fr));
         }
 
         .full-width {
@@ -557,7 +617,7 @@ export default function ItemMasterPage() {
         .data-table {
           width: 100%;
           border-collapse: collapse;
-          min-width: 920px;
+          min-width: 820px;
           background: #fff;
         }
 
@@ -571,6 +631,26 @@ export default function ItemMasterPage() {
           padding: 16px 18px;
           font-size: 14px;
           border-bottom: 1px solid #dbe3ee;
+        }
+
+        .sort-header {
+          height: auto;
+          padding: 0;
+          border: none;
+          border-radius: 0;
+          background: transparent;
+          color: #1e3a5f;
+          font-size: 14px;
+          font-weight: 800;
+          cursor: pointer;
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+        }
+
+        .sort-header span {
+          font-size: 13px;
+          color: #475569;
         }
 
         .data-table tbody td {

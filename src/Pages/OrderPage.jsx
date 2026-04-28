@@ -40,24 +40,13 @@ function parsePackingParts(packingText) {
 
   const packCount = Number(match[1]);
   const packUnit = Number(match[2]);
-
   const compactUnit = String(packUnit).replace(/\.0+$/, "");
-  const packingCompact = `${packCount}x${compactUnit}`;
-
-  if (!Number.isFinite(packCount) || !Number.isFinite(packUnit)) {
-    return {
-      packCount: 0,
-      packUnit: 0,
-      totalLit: 0,
-      packingCompact,
-    };
-  }
 
   return {
     packCount,
     packUnit,
     totalLit: packCount * packUnit,
-    packingCompact,
+    packingCompact: `${packCount}x${compactUnit}`,
   };
 }
 
@@ -79,9 +68,7 @@ function getNextOrderNo(headers) {
     const match = code.match(/PDO-(\d+)/i);
     if (match) {
       const n = Number(match[1]);
-      if (!Number.isNaN(n) && n > maxNumber) {
-        maxNumber = n;
-      }
+      if (!Number.isNaN(n) && n > maxNumber) maxNumber = n;
     }
   });
 
@@ -99,10 +86,21 @@ function getCustomerLabel(customer) {
 }
 
 function buildItemLabel(row, itemMasterMap) {
-  const item = itemMasterMap[row.item_id];
-  if (item?.item_name) return item.item_name;
-  if (row.item) return row.item;
-  return row.item_id ? `Item #${row.item_id}` : "";
+  const item = itemMasterMap[row?.item_id] || {};
+  const itemName =
+    row?.item_name ||
+    row?.item ||
+    item?.item_name ||
+    item?.item_code ||
+    "";
+
+  const subBrand = String(row?.sub_brand || "").trim();
+  const cleanItem = String(itemName || "").trim();
+
+  if (subBrand && cleanItem) return `${subBrand} ${cleanItem}`.trim();
+  if (cleanItem) return cleanItem;
+
+  return row?.item_id ? `Item #${row.item_id}` : "";
 }
 
 function buildCanDescription(row) {
@@ -125,12 +123,9 @@ function buildCartonDescription(row) {
   if (brand && packingCompact && cartonColor) {
     return `${brand} Carton ${packingCompact} ${cartonColor}`;
   }
-  if (brand && packingCompact) {
-    return `${brand} Carton ${packingCompact}`;
-  }
-  if (packingCompact && cartonColor) {
-    return `Carton ${packingCompact} ${cartonColor}`;
-  }
+  if (brand && packingCompact) return `${brand} Carton ${packingCompact}`;
+  if (packingCompact && cartonColor) return `Carton ${packingCompact} ${cartonColor}`;
+
   return `${brand} Carton`.trim();
 }
 
@@ -163,7 +158,7 @@ function calcLineTotals(line, packingBrandMap, itemMasterMap) {
   };
 }
 
-export default function OrderPage() {
+export default function OrderPage({ openPage }) {
   const [customers, setCustomers] = useState([]);
   const [customerBrands, setCustomerBrands] = useState([]);
   const [customerItems, setCustomerItems] = useState([]);
@@ -177,7 +172,7 @@ export default function OrderPage() {
     pdo_date: todayISO(),
   });
 
-  const [lines, setLines] = useState([{ ...emptyLine, row_id: crypto.randomUUID() }]);
+  const [lines, setLines] = useState([]);
   const [packingColumns, setPackingColumns] = useState([]);
 
   const [editingRowId, setEditingRowId] = useState("");
@@ -280,21 +275,15 @@ export default function OrderPage() {
       if (headersRes.error) throw headersRes.error;
       if (palletDataRes.error) throw palletDataRes.error;
 
-      const customersData = customersRes.data || [];
-      const customerBrandsData = brandCustomerRes.data || [];
-      const customerItemsData = customerItemsRes.data || [];
-      const itemMasterData = itemMasterRes.data || [];
-      const packingBrandData = packingBrandRes.data || [];
       const headersData = headersRes.data || [];
-      const palletDataRow = (palletDataRes.data || [])[0] || null;
 
-      setCustomers(customersData);
-      setCustomerBrands(customerBrandsData);
-      setCustomerItems(customerItemsData);
-      setItemMasterRows(itemMasterData);
-      setPackingBrandRows(packingBrandData);
+      setCustomers(customersRes.data || []);
+      setCustomerBrands(brandCustomerRes.data || []);
+      setCustomerItems(customerItemsRes.data || []);
+      setItemMasterRows(itemMasterRes.data || []);
+      setPackingBrandRows(packingBrandRes.data || []);
       setHeaders(headersData);
-      setPalletData(palletDataRow);
+      setPalletData((palletDataRes.data || [])[0] || null);
 
       setHeaderForm((prev) => ({
         ...prev,
@@ -310,19 +299,30 @@ export default function OrderPage() {
   }
 
   function clearForm() {
-    const newRowId = crypto.randomUUID();
-
     setHeaderForm({
       ...emptyHeader,
       pdo_no: getNextOrderNo(headers),
       pdo_date: todayISO(),
     });
-    setLines([{ ...emptyLine, line_no: 1, row_id: newRowId }]);
+
+    setLines([]);
     setPackingColumns([]);
-    setEditingRowId(newRowId);
+    setEditingRowId("");
     setBottomPackingId("");
     setBottomPackingQty("");
     setMessage("");
+    setError("");
+  }
+
+  function handleSaveNew() {
+    setHeaderForm((prev) => ({
+      ...prev,
+      id: "",
+      pdo_no: getNextOrderNo(headers),
+      pdo_date: todayISO(),
+    }));
+
+    setMessage("Ready to save as new Order.");
     setError("");
   }
 
@@ -331,6 +331,14 @@ export default function OrderPage() {
       ...prev,
       [field]: value,
     }));
+
+    if (field === "customer_id") {
+      setLines([]);
+      setPackingColumns([]);
+      setBottomPackingId("");
+      setBottomPackingQty("");
+      setEditingRowId("");
+    }
   }
 
   function handleLineChange(index, field, value) {
@@ -344,6 +352,7 @@ export default function OrderPage() {
         };
 
         if (field === "brand_symbol") {
+          updated.item_id = "";
           updated.quantities = {};
         }
 
@@ -372,10 +381,10 @@ export default function OrderPage() {
   function removeRow(index) {
     setLines((prev) => {
       const next = prev.filter((_, i) => i !== index);
+
       if (next.length === 0) {
-        const newRowId = crypto.randomUUID();
-        setEditingRowId(newRowId);
-        return [{ ...emptyLine, line_no: 1, row_id: newRowId }];
+        setEditingRowId("");
+        return [];
       }
 
       const normalized = next.map((line, i) => ({
@@ -398,11 +407,42 @@ export default function OrderPage() {
     );
   }
 
-  function getItemOptionsForCustomer(customerId) {
-    if (!customerId) return [];
-    return customerItems.filter(
-      (row) => String(row.customer_id) === String(customerId)
+  function getItemOptionsForLine(customerId, brandSymbol) {
+    if (!customerId || !brandSymbol) return [];
+
+    const selectedBrandRows = customerBrands.filter(
+      (brand) =>
+        String(brand.customer_id) === String(customerId) &&
+        String(brand.brand_symbol) === String(brandSymbol)
     );
+
+    const selectedCustomerBrandIds = new Set(
+      selectedBrandRows.map((brand) => String(brand.id))
+    );
+
+    return customerItems.filter((row) => {
+      const sameCustomer = String(row.customer_id) === String(customerId);
+
+      const sameCustomerBrandId =
+        row.customer_brand_id &&
+        selectedCustomerBrandIds.has(String(row.customer_brand_id));
+
+      const sameBrandSymbol =
+        row.brand_symbol && String(row.brand_symbol) === String(brandSymbol);
+
+      return sameCustomer && (sameCustomerBrandId || sameBrandSymbol);
+    });
+  }
+
+  function findCustomerItemForLine(line) {
+    const options = getItemOptionsForLine(headerForm.customer_id, line.brand_symbol);
+    return options.find((row) => String(row.item_id) === String(line.item_id)) || null;
+  }
+
+  function getLineItemLabel(line) {
+    const customerItemRow = findCustomerItemForLine(line);
+    if (customerItemRow) return buildItemLabel(customerItemRow, itemMasterMap);
+    return buildItemLabel(line, itemMasterMap);
   }
 
   function getPackingOptionsForBrand(brandSymbol) {
@@ -577,6 +617,10 @@ export default function OrderPage() {
       validLines.forEach((line, lineIndex) => {
         const item = itemMasterMap[line.item_id] || {};
         const density = num(item.density);
+        const customerItemRow = findCustomerItemForLine(line);
+        const itemName = customerItemRow
+          ? buildItemLabel(customerItemRow, itemMasterMap)
+          : getLineItemLabel(line);
 
         Object.entries(line.quantities || {}).forEach(([packingBrandId, qty]) => {
           const quantity = num(qty);
@@ -592,11 +636,7 @@ export default function OrderPage() {
             line_no: lineIndex + 1,
             brand_symbol: line.brand_symbol,
             item_id: line.item_id || null,
-            item_name:
-              item.item_name ||
-              item.item_code ||
-              buildItemLabel(line, itemMasterMap) ||
-              "",
+            item_name: itemName || "",
             density,
             packing_brand_id: packingBrandId,
             packing: packingRow.packing || "",
@@ -654,6 +694,7 @@ export default function OrderPage() {
             line_no: detail.line_no,
             brand_symbol: detail.brand_symbol || "",
             item_id: detail.item_id || "",
+            item_name: detail.item_name || "",
             quantities: {},
           };
         }
@@ -681,7 +722,7 @@ export default function OrderPage() {
               ...line,
               line_no: index + 1,
             }))
-          : [{ ...emptyLine, line_no: 1, row_id: crypto.randomUUID() }];
+          : [];
 
       setHeaderForm({
         id: row.id,
@@ -835,7 +876,7 @@ export default function OrderPage() {
     return lines.map((line, index) => {
       const row = {
         sn: index + 1,
-        itemName: buildItemLabel(line, itemMasterMap),
+        itemName: getLineItemLabel(line),
         sizes: {},
       };
 
@@ -856,7 +897,14 @@ export default function OrderPage() {
 
       return row;
     });
-  }, [lines, stickerSizeColumns, packingBrandMap, itemMasterMap]);
+  }, [
+    lines,
+    stickerSizeColumns,
+    packingBrandMap,
+    itemMasterMap,
+    customerItems,
+    headerForm.customer_id,
+  ]);
 
   return (
     <div className="page-shell">
@@ -865,7 +913,7 @@ export default function OrderPage() {
         <p>Create dynamic packing columns by Customer / Brand / Item</p>
       </div>
 
-      <div className="page-card">
+      <div className="page-card header-card">
         <div className="form-grid three-cols compact-header-grid">
           <div className="form-group">
             <label>Customer</label>
@@ -901,229 +949,351 @@ export default function OrderPage() {
       {message ? <div className="alert success">{message}</div> : null}
       {error ? <div className="alert error">{error}</div> : null}
 
-      <div className="table-card">
-        <div className="table-scroll">
-          <table className="data-table order-table">
-            <thead>
-              <tr>
-                <th rowSpan="2" className="th-sn">S/N</th>
-                <th rowSpan="2" className="th-brand">Brand</th>
-                <th rowSpan="2" className="th-item">Item</th>
-                {packingColumns.map((col) => (
-                  <th key={`top-${col.id}`} className="packing-top-cell">
-                    Packing
-                  </th>
-                ))}
-                <th rowSpan="2" className="th-total">Total Lit</th>
-                <th rowSpan="2" className="th-total">Total kg</th>
-                <th rowSpan="2" className="th-actions">Actions</th>
-              </tr>
-              <tr>
-                {packingColumns.map((col) => (
-                  <th key={`name-${col.id}`} className="packing-name-cell">
-                    {col.packing}
-                  </th>
-                ))}
-              </tr>
-            </thead>
+      <div className="order-work-area">
+        <div className="order-action-bar">
+          <button
+            type="button"
+            className="btn-dark"
+            onClick={addRow}
+            disabled={!headerForm.customer_id}
+          >
+            Add Row
+          </button>
 
-            <tbody>
-              {lines.length === 0 ? (
+          <div className="bottom-packing-title">
+            {editingRow ? `Editing Row #${editingRow.line_no}` : "Select a row with Edit"}
+          </div>
+
+          <select
+            value={bottomPackingId}
+            onChange={(e) => setBottomPackingId(e.target.value)}
+            disabled={!editingRow || !editingRow.brand_symbol}
+          >
+            <option value="">
+              {!editingRow
+                ? "Select row first"
+                : !editingRow.brand_symbol
+                ? "Select Brand in row first"
+                : bottomPackingOptions.length === 0
+                ? "No Packing found"
+                : "Select Packing"}
+            </option>
+
+            {bottomPackingOptions.map((row) => (
+              <option key={row.id} value={row.id}>
+                {row.packing}
+              </option>
+            ))}
+          </select>
+
+          <input
+            type="number"
+            min="0"
+            step="0.001"
+            value={bottomPackingQty}
+            onChange={(e) => setBottomPackingQty(e.target.value)}
+            placeholder="Qty"
+            disabled={!editingRow}
+          />
+
+          <button
+            type="button"
+            className="btn-dark"
+            onClick={handleAddPackingBottom}
+            disabled={!editingRow}
+          >
+            Add Packing
+          </button>
+        </div>
+
+        <div className="table-card">
+          <div className="table-scroll">
+            <table className="data-table order-table">
+              <thead>
                 <tr>
-                  <td colSpan={7 + packingColumns.length} className="empty-cell">
-                    No lines.
-                  </td>
+                  <th rowSpan="2" className="th-sn">S/N</th>
+                  <th rowSpan="2" className="th-brand">Brand</th>
+                  <th rowSpan="2" className="th-item">Item</th>
+                  {packingColumns.map((col) => (
+                    <th key={`top-${col.id}`} className="packing-top-cell">
+                      Packing
+                    </th>
+                  ))}
+                  <th rowSpan="2" className="th-total">Total Lit</th>
+                  <th rowSpan="2" className="th-total">Total kg</th>
+                  <th rowSpan="2" className="th-actions">Actions</th>
                 </tr>
-              ) : (
-                lines.map((line, index) => {
-                  const brandOptions = getBrandOptionsForCustomer(headerForm.customer_id);
-                  const itemOptions = getItemOptionsForCustomer(headerForm.customer_id);
-                  const totals = calcLineTotals(line, packingBrandMap, itemMasterMap);
-                  const isEditing = editingRowId === line.row_id;
+                <tr>
+                  {packingColumns.map((col) => (
+                    <th key={`name-${col.id}`} className="packing-name-cell">
+                      {col.packing}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
 
-                  return (
-                    <tr key={line.row_id || index} className={isEditing ? "editing-row" : ""}>
-                      <td>{index + 1}</td>
+              <tbody>
+                {lines.length > 0 ? (
+                  lines.map((line, index) => {
+                    const brandOptions = getBrandOptionsForCustomer(headerForm.customer_id);
+                    const itemOptions = getItemOptionsForLine(
+                      headerForm.customer_id,
+                      line.brand_symbol
+                    );
+                    const totals = calcLineTotals(line, packingBrandMap, itemMasterMap);
+                    const isEditing = editingRowId === line.row_id;
 
-                      <td>
-                        {isEditing ? (
-                          <select
-                            value={line.brand_symbol}
-                            onChange={(e) =>
-                              handleLineChange(index, "brand_symbol", e.target.value)
-                            }
-                            disabled={!headerForm.customer_id}
-                            className="compact-select"
-                          >
-                            <option value="">
-                              {!headerForm.customer_id
-                                ? "Select Customer first"
-                                : "Select Brand"}
-                            </option>
-                            {brandOptions.map((brand) => (
-                              <option key={brand.id} value={brand.brand_symbol}>
-                                {brand.brand_symbol}
-                              </option>
-                            ))}
-                          </select>
-                        ) : (
-                          <span>{line.brand_symbol || ""}</span>
-                        )}
-                      </td>
+                    return (
+                      <tr key={line.row_id || index} className={isEditing ? "editing-row" : ""}>
+                        <td>{index + 1}</td>
 
-                      <td className="item-cell">
-                        {isEditing ? (
-                          <select
-                            value={line.item_id}
-                            onChange={(e) =>
-                              handleLineChange(index, "item_id", e.target.value)
-                            }
-                            disabled={!headerForm.customer_id}
-                            className="compact-select"
-                          >
-                            <option value="">
-                              {!headerForm.customer_id
-                                ? "Select Customer first"
-                                : "Select Item"}
-                            </option>
-                            {itemOptions.map((row) => (
-                              <option key={`${row.id}-${row.item_id}`} value={row.item_id}>
-                                {buildItemLabel(row, itemMasterMap)}
-                              </option>
-                            ))}
-                          </select>
-                        ) : (
-                          <span>{buildItemLabel(line, itemMasterMap)}</span>
-                        )}
-                      </td>
-
-                      {packingColumns.map((col) => (
-                        <td key={`qty-${line.row_id}-${col.id}`} className="qty-cell">
+                        <td>
                           {isEditing ? (
-                            <input
-                              type="number"
-                              min="0"
-                              step="0.001"
-                              value={line.quantities[String(col.id)] ?? ""}
+                            <select
+                              value={line.brand_symbol}
                               onChange={(e) =>
-                                handleQuantityCellChange(index, col.id, e.target.value)
+                                handleLineChange(index, "brand_symbol", e.target.value)
                               }
-                              className="compact-qty-input"
-                            />
+                              disabled={!headerForm.customer_id}
+                              className="compact-select"
+                            >
+                              <option value="">
+                                {!headerForm.customer_id
+                                  ? "Select Customer first"
+                                  : "Select Brand"}
+                              </option>
+                              {brandOptions.map((brand) => (
+                                <option key={brand.id} value={brand.brand_symbol}>
+                                  {brand.brand_symbol}
+                                </option>
+                              ))}
+                            </select>
                           ) : (
-                            <span>{line.quantities[String(col.id)] ?? ""}</span>
+                            <span>{line.brand_symbol || ""}</span>
                           )}
                         </td>
-                      ))}
 
-                      <td>{totals.totalLit.toFixed(2)}</td>
-                      <td>{totals.totalKg.toFixed(4)}</td>
-
-                      <td>
-                        <div className="table-actions">
+                        <td className="item-cell">
                           {isEditing ? (
-                            <button
-                              type="button"
-                              className="btn-edit compact-btn"
-                              onClick={() => {
-                                setEditingRowId("");
-                                setBottomPackingId("");
-                                setBottomPackingQty("");
-                              }}
+                            <select
+                              value={line.item_id}
+                              onChange={(e) =>
+                                handleLineChange(index, "item_id", e.target.value)
+                              }
+                              disabled={!headerForm.customer_id || !line.brand_symbol}
+                              className="compact-select"
                             >
-                              Done
-                            </button>
+                              <option value="">
+                                {!headerForm.customer_id
+                                  ? "Select Customer first"
+                                  : !line.brand_symbol
+                                  ? "Select Brand first"
+                                  : itemOptions.length === 0
+                                  ? "No Item found"
+                                  : "Select Item"}
+                              </option>
+
+                              {itemOptions.map((row) => (
+                                <option key={`${row.id}-${row.item_id}`} value={row.item_id}>
+                                  {buildItemLabel(row, itemMasterMap)}
+                                </option>
+                              ))}
+                            </select>
                           ) : (
+                            <span>{getLineItemLabel(line)}</span>
+                          )}
+                        </td>
+
+                        {packingColumns.map((col) => (
+                          <td key={`qty-${line.row_id}-${col.id}`} className="qty-cell">
+                            {isEditing ? (
+                              <input
+                                type="number"
+                                min="0"
+                                step="0.001"
+                                value={line.quantities[String(col.id)] ?? ""}
+                                onChange={(e) =>
+                                  handleQuantityCellChange(index, col.id, e.target.value)
+                                }
+                                className="compact-qty-input"
+                              />
+                            ) : (
+                              <span>{line.quantities[String(col.id)] ?? ""}</span>
+                            )}
+                          </td>
+                        ))}
+
+                        <td>{totals.totalLit.toFixed(2)}</td>
+                        <td>{totals.totalKg.toFixed(4)}</td>
+
+                        <td>
+                          <div className="table-actions">
+                            {isEditing ? (
+                              <button
+                                type="button"
+                                className="btn-edit compact-btn"
+                                onClick={() => {
+                                  setEditingRowId("");
+                                  setBottomPackingId("");
+                                  setBottomPackingQty("");
+                                }}
+                              >
+                                Done
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                className="btn-edit compact-btn"
+                                onClick={() => {
+                                  setEditingRowId(line.row_id);
+                                  setBottomPackingId("");
+                                  setBottomPackingQty("");
+                                }}
+                              >
+                                Edit
+                              </button>
+                            )}
+
                             <button
                               type="button"
-                              className="btn-edit compact-btn"
-                              onClick={() => {
-                                setEditingRowId(line.row_id);
-                                setBottomPackingId("");
-                                setBottomPackingQty("");
-                              }}
+                              className="btn-delete compact-btn"
+                              onClick={() => removeRow(index)}
                             >
-                              Edit
+                              Delete
                             </button>
-                          )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                ) : null}
+              </tbody>
 
-                          <button
-                            type="button"
-                            className="btn-delete compact-btn"
-                            onClick={() => removeRow(index)}
-                          >
-                            Delete
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
+              <tfoot>
+                <tr>
+                  <th colSpan="3" className="footer-label">No. of Package</th>
+                  {packingColumns.map((col) => (
+                    <th key={`pkg-${col.id}`}>
+                      {packingTotals[String(col.id)].toFixed(3).replace(/\.?0+$/, "")}
+                    </th>
+                  ))}
+                  <th>{grandTotals.totalLit.toFixed(2)}</th>
+                  <th>{grandTotals.totalKg.toFixed(4)}</th>
+                  <th></th>
+                </tr>
 
-            <tfoot>
-              <tr>
-                <th colSpan="3" className="footer-label">No. of Package</th>
-                {packingColumns.map((col) => (
-                  <th key={`pkg-${col.id}`}>
-                    {packingTotals[String(col.id)].toFixed(3).replace(/\.?0+$/, "")}
-                  </th>
-                ))}
-                <th>{grandTotals.totalLit.toFixed(2)}</th>
-                <th>{grandTotals.totalKg.toFixed(4)}</th>
-                <th></th>
-              </tr>
+                <tr>
+                  <th colSpan="3" className="footer-label">No. of Pallets</th>
+                  {packingColumns.map((col) => (
+                    <th key={`plt-${col.id}`}>
+                      {palletTotals[String(col.id)].toFixed(6).replace(/\.?0+$/, "")}
+                    </th>
+                  ))}
+                  <th>{totalPalletsAll.toFixed(6).replace(/\.?0+$/, "")}</th>
+                  <th></th>
+                  <th></th>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
 
-              <tr>
-                <th colSpan="3" className="footer-label">No. of Pallets</th>
-                {packingColumns.map((col) => (
-                  <th key={`plt-${col.id}`}>
-                    {palletTotals[String(col.id)].toFixed(6).replace(/\.?0+$/, "")}
-                  </th>
-                ))}
-                <th>{totalPalletsAll.toFixed(6).replace(/\.?0+$/, "")}</th>
-                <th></th>
-                <th></th>
-              </tr>
-            </tfoot>
-          </table>
+        <div className="summary-card">
+          <div className="summary-grid">
+            <div className="summary-box">
+              <div className="summary-label">Total Pallet</div>
+              <div className="summary-value">
+                {totalPalletsAll.toFixed(6).replace(/\.?0+$/, "")}
+              </div>
+            </div>
+
+            <div className="summary-box">
+              <div className="summary-label">Total Packing</div>
+              <div className="summary-value">
+                {totalPackagesAll.toFixed(3).replace(/\.?0+$/, "")}
+              </div>
+            </div>
+
+            <div className="summary-box">
+              <div className="summary-label">Total Weight W/O Pallets</div>
+              <div className="summary-value">
+                {grandTotals.totalWeightWithoutPallets.toFixed(3)}
+              </div>
+            </div>
+
+            <div className="summary-box">
+              <div className="summary-label">Total Weight With Pallets</div>
+              <div className="summary-value">
+                {totalWeightWithPallets.toFixed(3)}
+              </div>
+            </div>
+          </div>
+
+          <div className="summary-note">
+            Pallet Weight used: {palletWeightValue.toFixed(3)}
+          </div>
         </div>
       </div>
 
-      <div className="summary-card">
-        <div className="summary-grid">
-          <div className="summary-box">
-            <div className="summary-label">Total Pallet</div>
-            <div className="summary-value">
-              {totalPalletsAll.toFixed(6).replace(/\.?0+$/, "")}
-            </div>
-          </div>
+      <div className="save-bar-card">
+        <div className="save-buttons">
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={saving}
+          >
+            {saving
+              ? "Saving..."
+              : headerForm.id
+              ? "Update Order"
+              : "Save Order"}
+          </button>
 
-          <div className="summary-box">
-            <div className="summary-label">Total Packing</div>
-            <div className="summary-value">
-              {totalPackagesAll.toFixed(3).replace(/\.?0+$/, "")}
-            </div>
-          </div>
+          {headerForm.id ? (
+            <button
+              type="button"
+              className="btn-dark"
+              onClick={handleSaveNew}
+              disabled={saving}
+            >
+              Save New
+            </button>
+          ) : null}
 
-          <div className="summary-box">
-            <div className="summary-label">Total Weight W/O Pallets</div>
-            <div className="summary-value">
-              {grandTotals.totalWeightWithoutPallets.toFixed(3)}
-            </div>
-          </div>
+          <button
+            type="button"
+            className="btn-edit"
+            onClick={() => {
+              if (!headerForm.id) {
+                setError("Please save or select an existing Order first.");
+                setMessage("");
+                return;
+              }
 
-          <div className="summary-box">
-            <div className="summary-label">Total Weight With Pallets</div>
-            <div className="summary-value">
-              {totalWeightWithPallets.toFixed(3)}
-            </div>
-          </div>
-        </div>
+              localStorage.setItem(
+                "selected_invoice_order_id",
+                String(headerForm.id)
+              );
 
-        <div className="summary-note">
-          Pallet Weight used: {palletWeightValue.toFixed(3)}
+              if (typeof openPage === "function") {
+                openPage("invoice");
+              } else {
+                setError("Invoice page is not connected in App.jsx.");
+              }
+            }}
+            disabled={saving || !headerForm.id}
+          >
+            Create Invoice
+          </button>
+
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={clearForm}
+            disabled={saving}
+          >
+            Clear
+          </button>
         </div>
       </div>
 
@@ -1205,81 +1375,6 @@ export default function OrderPage() {
         </div>
       </div>
 
-      <div className="bottom-bar-card">
-        <div className="bottom-bar">
-          <div className="bottom-buttons">
-            <button type="button" onClick={handleSave} disabled={saving}>
-              {saving ? "Saving..." : headerForm.id ? "Update Order" : "Save Order"}
-            </button>
-
-            <button
-              type="button"
-              className="btn-secondary"
-              onClick={clearForm}
-              disabled={saving}
-            >
-              Clear
-            </button>
-
-            <button
-              type="button"
-              className="btn-dark"
-              onClick={addRow}
-              disabled={!headerForm.customer_id}
-            >
-              Add Row
-            </button>
-          </div>
-
-          <div className="bottom-packing">
-            <div className="bottom-packing-title">
-              {editingRow ? `Editing Row #${editingRow.line_no}` : "Select a row with Edit"}
-            </div>
-
-            <select
-              value={bottomPackingId}
-              onChange={(e) => setBottomPackingId(e.target.value)}
-              disabled={!editingRow || !editingRow.brand_symbol}
-            >
-              <option value="">
-                {!editingRow
-                  ? "Select row first"
-                  : !editingRow.brand_symbol
-                  ? "Select Brand in row first"
-                  : bottomPackingOptions.length === 0
-                  ? "No Packing found"
-                  : "Select Packing"}
-              </option>
-
-              {bottomPackingOptions.map((row) => (
-                <option key={row.id} value={row.id}>
-                  {row.packing}
-                </option>
-              ))}
-            </select>
-
-            <input
-              type="number"
-              min="0"
-              step="0.001"
-              value={bottomPackingQty}
-              onChange={(e) => setBottomPackingQty(e.target.value)}
-              placeholder="Qty"
-              disabled={!editingRow}
-            />
-
-            <button
-              type="button"
-              className="btn-dark"
-              onClick={handleAddPackingBottom}
-              disabled={!editingRow}
-            >
-              Add Packing
-            </button>
-          </div>
-        </div>
-      </div>
-
       <div className="toolbar-card">
         <div className="toolbar toolbar-two">
           <input
@@ -1294,7 +1389,7 @@ export default function OrderPage() {
         </div>
       </div>
 
-      <div className="table-card">
+      <div className="table-card history-card">
         <div className="table-scroll">
           {loading ? (
             <div className="empty-state">Loading Order records...</div>
@@ -1385,9 +1480,9 @@ export default function OrderPage() {
         .page-card,
         .toolbar-card,
         .table-card,
-        .bottom-bar-card,
         .summary-card,
-        .report-card {
+        .report-card,
+        .save-bar-card {
           background: #ffffff;
           border-radius: 14px;
           box-shadow: 0 8px 26px rgba(15, 23, 42, 0.08);
@@ -1398,15 +1493,50 @@ export default function OrderPage() {
 
         .page-card,
         .toolbar-card,
-        .bottom-bar-card,
         .summary-card,
-        .report-card {
+        .report-card,
+        .save-bar-card {
           padding: 22px 18px;
+        }
+
+        .header-card {
+          margin-bottom: 8px;
         }
 
         .table-card {
           padding: 0;
           overflow: hidden;
+        }
+
+        .history-card {
+          margin-bottom: 0;
+        }
+
+        .order-work-area {
+          max-width: 1400px;
+          margin: 0 auto 28px;
+          background: #ffffff;
+          padding: 48px 28px 28px;
+          border: 1px solid #eef2f7;
+        }
+
+        .order-action-bar {
+          display: grid;
+          grid-template-columns: 90px 170px 1fr 110px 120px;
+          gap: 10px;
+          align-items: center;
+          margin-bottom: 14px;
+        }
+
+        .order-action-bar select,
+        .order-action-bar input {
+          height: 44px;
+          border: 1px solid #cbd5e1;
+          border-radius: 10px;
+          padding: 0 12px;
+          font-size: 14px;
+          outline: none;
+          background: #fff;
         }
 
         .report-title {
@@ -1448,9 +1578,7 @@ export default function OrderPage() {
 
         .form-group input,
         .form-group select,
-        .toolbar input,
-        .bottom-packing select,
-        .bottom-packing input {
+        .toolbar input {
           height: 44px;
           border: 1px solid #cbd5e1;
           border-radius: 10px;
@@ -1474,8 +1602,8 @@ export default function OrderPage() {
         .btn-secondary,
         .btn-edit,
         .btn-delete,
-        .bottom-buttons button,
-        .bottom-packing button {
+        .save-buttons button,
+        .order-action-bar button {
           height: 38px;
           border-radius: 8px;
           padding: 0 14px;
@@ -1485,7 +1613,7 @@ export default function OrderPage() {
           cursor: pointer;
         }
 
-        .bottom-buttons button:first-child {
+        .save-buttons button:first-child {
           background: #111827;
           color: #fff;
         }
@@ -1513,6 +1641,13 @@ export default function OrderPage() {
         .btn-refresh {
           background: #6b7280;
           color: white;
+        }
+
+        button:disabled,
+        select:disabled,
+        input:disabled {
+          opacity: 0.65;
+          cursor: not-allowed;
         }
 
         .alert {
@@ -1691,27 +1826,6 @@ export default function OrderPage() {
           color: #64748b;
         }
 
-        .bottom-bar {
-          display: grid;
-          grid-template-columns: auto 1fr;
-          gap: 16px;
-          align-items: end;
-        }
-
-        .bottom-buttons {
-          display: flex;
-          gap: 10px;
-          flex-wrap: wrap;
-          align-items: center;
-        }
-
-        .bottom-packing {
-          display: grid;
-          grid-template-columns: 170px 1fr 110px 120px;
-          gap: 10px;
-          align-items: end;
-        }
-
         .bottom-packing-title {
           height: 44px;
           display: flex;
@@ -1722,13 +1836,24 @@ export default function OrderPage() {
           white-space: nowrap;
         }
 
-        @media (max-width: 1100px) {
-          .bottom-bar {
-            grid-template-columns: 1fr;
-          }
+        .save-bar-card {
+          min-height: 86px;
+          display: flex;
+          align-items: center;
+        }
 
-          .bottom-packing {
-            grid-template-columns: 1fr 1fr 120px 120px;
+        .save-buttons {
+          display: flex;
+          gap: 10px;
+          flex-wrap: wrap;
+          align-items: center;
+          border-left: 3px solid #e5e7eb;
+          padding-left: 18px;
+        }
+
+        @media (max-width: 1100px) {
+          .order-action-bar {
+            grid-template-columns: 1fr 1fr 1fr;
           }
 
           .summary-grid {
@@ -1739,8 +1864,8 @@ export default function OrderPage() {
         @media (max-width: 960px) {
           .three-cols,
           .toolbar-two,
-          .bottom-packing,
-          .summary-grid {
+          .summary-grid,
+          .order-action-bar {
             grid-template-columns: 1fr;
           }
         }

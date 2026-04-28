@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { supabase } from "./lib/supabaseClient";
-import { useNavigate } from "react-router-dom";
 
 const CATEGORY_CONFIG = [
   {
@@ -94,9 +93,7 @@ function groupRowsByCategory(rows) {
   }, {});
 }
 
-export default function PackagingDefinitionsPage() {
-  const navigate = useNavigate();
-
+export default function PackagingDefinitionsPage({ openPage }) {
   const [rows, setRows] = useState([]);
   const [forms, setForms] = useState(createInitialForms());
   const [messages, setMessages] = useState(createInitialMessages());
@@ -364,7 +361,7 @@ export default function PackagingDefinitionsPage() {
             <button
               type="button"
               className="category-tab pallet-tab"
-              onClick={() => navigate("/pallet-data")}
+              onClick={() => openPage && openPage("pallet-data")}
             >
               Pallet Data
             </button>

@@ -97,11 +97,15 @@ export default function CustomersPage() {
         if (!map[row.customer_id]) {
           map[row.customer_id] = [];
         }
-        map[row.customer_id].push(row.customer_brand);
 
-        if (row.brand_symbol && !map[`${row.customer_id}__symbols`]) {
+        if (row.customer_brand && !map[row.customer_id].includes(row.customer_brand)) {
+          map[row.customer_id].push(row.customer_brand);
+        }
+
+        if (!map[`${row.customer_id}__symbols`]) {
           map[`${row.customer_id}__symbols`] = [];
         }
+
         if (
           row.brand_symbol &&
           !map[`${row.customer_id}__symbols`].includes(row.brand_symbol)
@@ -175,6 +179,37 @@ export default function CustomersPage() {
     setErrorMsg("");
   }
 
+  async function saveCustomerBrands(customerId, customerSymbol, visualBrands) {
+    const cleanBrands = [...new Set((visualBrands || []).map((x) => (x || "").trim()).filter(Boolean))];
+
+    const { error: deleteLinksError } = await supabase
+      .from("brand_customer")
+      .delete()
+      .eq("customer_id", customerId);
+
+    if (deleteLinksError) {
+      throw deleteLinksError;
+    }
+
+    if (cleanBrands.length === 0) {
+      return;
+    }
+
+    const rowsToInsert = cleanBrands.map((brandSymbol) => ({
+      customer_id: customerId,
+      brand_symbol: brandSymbol,
+      customer_brand: buildCustomerBrandSymbol(brandSymbol, customerSymbol),
+    }));
+
+    const { error: insertLinksError } = await supabase
+      .from("brand_customer")
+      .insert(rowsToInsert);
+
+    if (insertLinksError) {
+      throw insertLinksError;
+    }
+  }
+
   async function handleSubmit(e) {
     e.preventDefault();
 
@@ -206,11 +241,19 @@ export default function CustomersPage() {
         notes: form.notes.trim() || null,
       };
 
+      let savedCustomer;
+
       if (editingId) {
-        await updateCustomer(editingId, payload);
+        savedCustomer = await updateCustomer(editingId, payload);
       } else {
-        await createCustomer(payload);
+        savedCustomer = await createCustomer(payload);
       }
+
+      await saveCustomerBrands(
+        savedCustomer.id,
+        payload.customer_symbol,
+        form.visual_brands
+      );
 
       const refreshed = await getCustomers();
       const normalizedRows = refreshed || [];
@@ -259,6 +302,15 @@ export default function CustomersPage() {
     if (!ok) return;
 
     try {
+      const { error: deleteLinksError } = await supabase
+        .from("brand_customer")
+        .delete()
+        .eq("customer_id", id);
+
+      if (deleteLinksError) {
+        throw deleteLinksError;
+      }
+
       await deleteCustomer(id);
 
       const refreshed = await getCustomers();
@@ -417,10 +469,6 @@ export default function CustomersPage() {
               ))}
             </div>
           )}
-
-          <div style={{ marginTop: "8px", fontSize: "12px", color: "#666" }}>
-            Visual only here. Save actual Customer-Brand links from the Customer Brand page.
-          </div>
         </div>
 
         <div>
@@ -602,7 +650,7 @@ export default function CustomersPage() {
       )}
 
       <div style={{ marginTop: "14px", color: "#555", fontSize: "14px" }}>
-        Customer Brands are created and saved from the <strong>Customer Brand</strong> page.
+        Customer Brands are updated automatically from this page.
       </div>
     </div>
   );

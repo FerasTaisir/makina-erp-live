@@ -33,6 +33,17 @@ export default function CustomerItemsPage() {
     return item?.item_name || item?.item_code || item?.id || "";
   }
 
+  function getFullItemName(row) {
+    const subBrand = String(row.sub_brand || "").trim();
+    const item = String(row.item || "").trim();
+
+    if (subBrand) {
+      return `${subBrand} ${item}`.trim();
+    }
+
+    return item;
+  }
+
   function extractCustomerCodeNumber(code) {
     const match = String(code || "").match(/(\d+)/);
     return match ? parseInt(match[1], 10) : Number.MAX_SAFE_INTEGER;
@@ -128,52 +139,59 @@ export default function CustomerItemsPage() {
     const q = search.trim().toLowerCase();
     if (q) {
       result = result.filter((row) => {
+        const fullItemName = getFullItemName(row);
+
         return (
           String(row.customer_code || "").toLowerCase().includes(q) ||
           String(row.customer_symbol || "").toLowerCase().includes(q) ||
           String(row.customer_brand || "").toLowerCase().includes(q) ||
           String(row.sub_brand || "").toLowerCase().includes(q) ||
-          String(row.item || "").toLowerCase().includes(q)
+          String(row.item || "").toLowerCase().includes(q) ||
+          String(fullItemName || "").toLowerCase().includes(q)
         );
       });
     }
 
     result.sort((a, b) => {
-      // 1) Customer Code by numeric sequence
       const customerNumberA = extractCustomerCodeNumber(a.customer_code);
       const customerNumberB = extractCustomerCodeNumber(b.customer_code);
+
       if (customerNumberA !== customerNumberB) {
         return customerNumberA - customerNumberB;
       }
 
       const customerCodeA = String(a.customer_code || "");
       const customerCodeB = String(b.customer_code || "");
+
       if (customerCodeA !== customerCodeB) {
         return customerCodeA.localeCompare(customerCodeB);
       }
 
-      // 2) Customer-Brand alphabetical
       const customerBrandA = String(a.customer_brand || "");
       const customerBrandB = String(b.customer_brand || "");
+
       if (customerBrandA !== customerBrandB) {
         return customerBrandA.localeCompare(customerBrandB);
       }
 
-      // 3) SAE numeric ascending
-      const saeA = extractSAE(a.item);
-      const saeB = extractSAE(b.item);
+      const fullItemA = getFullItemName(a);
+      const fullItemB = getFullItemName(b);
+
+      const saeA = extractSAE(fullItemA);
+      const saeB = extractSAE(fullItemB);
+
       if (saeA !== saeB) {
         return saeA - saeB;
       }
 
-      // 4) API alphabetical ascending
-      const apiA = extractAPI(a.item);
-      const apiB = extractAPI(b.item);
+      const apiA = extractAPI(fullItemA);
+      const apiB = extractAPI(fullItemB);
+
       if (apiA !== apiB) {
         return apiA.localeCompare(apiB);
       }
 
-      return String(a.item || "").localeCompare(String(b.item || ""));
+      return fullItemA.localeCompare(fullItemB);
     });
 
     return result;
@@ -284,8 +302,9 @@ export default function CustomerItemsPage() {
 
   async function handleDelete(row) {
     const ok = window.confirm(
-      `Delete Customer Item?\n\n${row.customer_symbol || ""} | ${row.customer_brand || ""} | ${row.sub_brand || "-"} | ${row.item || ""}`
+      `Delete Customer Item?\n\n${row.customer_symbol || ""} | ${row.customer_brand || ""} | ${getFullItemName(row)}`
     );
+
     if (!ok) return;
 
     try {
@@ -445,15 +464,15 @@ export default function CustomerItemsPage() {
                   <th>Customer Code</th>
                   <th>Customer Symbol</th>
                   <th>Customer-Brand</th>
-                  <th>Sub-Brand</th>
                   <th>Item</th>
                   <th style={{ width: "180px" }}>Actions</th>
                 </tr>
               </thead>
+
               <tbody>
                 {filteredRows.length === 0 ? (
                   <tr>
-                    <td colSpan="6" className="empty-cell">
+                    <td colSpan="5" className="empty-cell">
                       No records found.
                     </td>
                   </tr>
@@ -463,8 +482,7 @@ export default function CustomerItemsPage() {
                       <td>{row.customer_code}</td>
                       <td>{row.customer_symbol}</td>
                       <td>{row.customer_brand}</td>
-                      <td>{row.sub_brand || "-"}</td>
-                      <td>{row.item}</td>
+                      <td>{getFullItemName(row)}</td>
                       <td>
                         <div className="table-actions">
                           <button
@@ -474,6 +492,7 @@ export default function CustomerItemsPage() {
                           >
                             Edit
                           </button>
+
                           <button
                             type="button"
                             className="btn-delete"
