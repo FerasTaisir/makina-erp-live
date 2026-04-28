@@ -10,6 +10,7 @@ import CustomersPage from "./CustomersPage";
 import FormulaPage from "./FormulaPage";
 import InvoiceDataPage from "./InvoiceDataPage";
 import InvoicePage from "./InvoicePage";
+import PriceOfferPage from "./PriceOfferPage";
 import PackagingDefinitionsPage from "./PackagingDefinitionsPage";
 import PackingBrandPage from "./PackingBrandPage";
 import PackingMasterPage from "./PackingMasterPage";
@@ -38,6 +39,7 @@ const pages = [
   { key: "invoice-data", label: "Invoice Data", component: InvoiceDataPage },
   { key: "order", label: "Order", component: OrderPage },
   { key: "production-order", label: "Production Order", component: ProductionOrderPage },
+  { key: "price-offer", label: "Price Offer", component: PriceOfferPage },
   { key: "invoice", label: "Invoice", component: InvoicePage },
 ];
 

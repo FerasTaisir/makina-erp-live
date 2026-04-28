@@ -75,6 +75,26 @@ function getNextOrderNo(headers) {
   return `PDO-${String(maxNumber + 1).padStart(4, "0")}`;
 }
 
+function getRootOrderId(row) {
+  return row?.parent_order_id || row?.id || null;
+}
+
+function getNextVersionNo(headers, orderRow) {
+  const rootId = getRootOrderId(orderRow);
+  if (!rootId) return 1;
+
+  const related = (headers || []).filter((row) => {
+    const rowRoot = row.parent_order_id || row.id;
+    return String(rowRoot) === String(rootId);
+  });
+
+  if (related.length === 0) return 1;
+
+  return (
+    Math.max(...related.map((row) => Number(row.version_no || 1))) + 1
+  );
+}
+
 function getCustomerLabel(customer) {
   return [
     customer?.customer_code || "",
@@ -231,6 +251,11 @@ export default function OrderPage({ openPage }) {
       );
     });
   }, [headers, search, customerMap]);
+
+  const currentHeaderRow = useMemo(() => {
+    if (!headerForm.id) return null;
+    return headers.find((row) => String(row.id) === String(headerForm.id)) || null;
+  }, [headers, headerForm.id]);
 
   useEffect(() => {
     loadAll();
@@ -541,7 +566,11 @@ export default function OrderPage({ openPage }) {
     );
   }
 
-  async function handleSave() {
+  async function handleSave(mode = "draft") {
+    const saveMode = typeof mode === "string" ? mode : "draft";
+    const saveAsNewVersion = saveMode === "new_version";
+    const confirmFinal = saveMode === "final";
+
     if (!headerForm.customer_id) {
       setError("Please select Customer.");
       setMessage("");
@@ -572,10 +601,21 @@ export default function OrderPage({ openPage }) {
       setError("");
       setMessage("");
 
-      const orderNo = headerForm.pdo_no || getNextOrderNo(headers);
       const orderDate = headerForm.pdo_date || todayISO();
 
+      const sourceHeader = currentHeaderRow || (headerForm.id ? { id: headerForm.id } : null);
+      const parentOrderId = sourceHeader?.parent_order_id || sourceHeader?.id || null;
+      const nextVersionNo = saveAsNewVersion
+        ? getNextVersionNo(headers, sourceHeader)
+        : Number(sourceHeader?.version_no || 1);
+
       let headerId = headerForm.id;
+      let orderNo = headerForm.pdo_no || getNextOrderNo(headers);
+
+      if (saveAsNewVersion) {
+        orderNo = `${String(headerForm.pdo_no || getNextOrderNo(headers)).split("-V")[0]}-V${nextVersionNo}`;
+        headerId = "";
+      }
 
       if (headerId) {
         const { error: updateHeaderError } = await supabase
@@ -584,6 +624,11 @@ export default function OrderPage({ openPage }) {
             customer_id: headerForm.customer_id,
             pdo_no: orderNo,
             pdo_date: orderDate,
+            status: confirmFinal ? "final" : "draft",
+            version_no: Number(sourceHeader?.version_no || 1),
+            parent_order_id: sourceHeader?.parent_order_id || null,
+            is_final: confirmFinal,
+            confirmed_at: confirmFinal ? new Date().toISOString() : null,
           })
           .eq("id", headerId);
 
@@ -603,6 +648,12 @@ export default function OrderPage({ openPage }) {
               customer_id: headerForm.customer_id,
               pdo_no: orderNo,
               pdo_date: orderDate,
+              status: confirmFinal ? "final" : "draft",
+              version_no: saveAsNewVersion ? nextVersionNo : 1,
+              parent_order_id: saveAsNewVersion ? parentOrderId : null,
+              is_final: confirmFinal,
+              confirmed_at: confirmFinal ? new Date().toISOString() : null,
+              created_from_order_id: saveAsNewVersion ? sourceHeader?.id || null : null,
             },
           ])
           .select()
@@ -657,7 +708,34 @@ export default function OrderPage({ openPage }) {
 
       if (insertLinesError) throw insertLinesError;
 
-      setMessage(headerForm.id ? "Order updated successfully." : "Order added successfully.");
+      if (confirmFinal) {
+        const finalRootId = parentOrderId || headerId;
+
+        const relatedIds = (headers || [])
+          .filter((row) => {
+            const rowRoot = row.parent_order_id || row.id;
+            return String(rowRoot) === String(finalRootId) && String(row.id) !== String(headerId);
+          })
+          .map((row) => row.id);
+
+        if (relatedIds.length > 0) {
+          const { error: unfinalError } = await supabase
+            .from("pdo_headers")
+            .update({ is_final: false })
+            .in("id", relatedIds);
+
+          if (unfinalError) throw unfinalError;
+        }
+      }
+
+      if (saveAsNewVersion) {
+        setMessage(`New Draft Version saved successfully: ${orderNo}`);
+      } else if (confirmFinal) {
+        setMessage("Final Order confirmed successfully.");
+      } else {
+        setMessage(headerForm.id ? "Draft updated successfully." : "Draft saved successfully.");
+      }
+
       clearForm();
       await loadAll();
     } catch (err) {
@@ -665,6 +743,45 @@ export default function OrderPage({ openPage }) {
       setError(err.message || "Failed to save Order.");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleSaveAsNewVersion() {
+    if (!headerForm.id) {
+      setError("Please select an existing Order first, then click Save As New Version.");
+      setMessage("");
+      return;
+    }
+
+    await handleSave("new_version");
+  }
+
+  async function handleConfirmFinalOrder() {
+    if (!headerForm.customer_id) {
+      setError("Please select Customer.");
+      setMessage("");
+      return;
+    }
+
+    const ok = window.confirm("Confirm this Order as FINAL?");
+    if (!ok) return;
+
+    await handleSave("final");
+  }
+
+  function handleCreatePriceOffer() {
+    if (!headerForm.id) {
+      setError("Please save or select an existing Order first.");
+      setMessage("");
+      return;
+    }
+
+    localStorage.setItem("selected_invoice_order_id", String(headerForm.id));
+
+    if (typeof openPage === "function") {
+      openPage("invoice");
+    } else {
+      setError("Invoice page is not connected in App.jsx.");
     }
   }
 
@@ -1239,51 +1356,41 @@ export default function OrderPage({ openPage }) {
         <div className="save-buttons">
           <button
             type="button"
-            onClick={handleSave}
+            onClick={() => handleSave("draft")}
             disabled={saving}
           >
             {saving
               ? "Saving..."
               : headerForm.id
-              ? "Update Order"
-              : "Save Order"}
+              ? "Update Draft"
+              : "Save Draft"}
           </button>
 
-          {headerForm.id ? (
-            <button
-              type="button"
-              className="btn-dark"
-              onClick={handleSaveNew}
-              disabled={saving}
-            >
-              Save New
-            </button>
-          ) : null}
+          <button
+            type="button"
+            className="btn-dark"
+            onClick={handleSaveAsNewVersion}
+            disabled={saving || !headerForm.id}
+          >
+            Save As New Version
+          </button>
 
           <button
             type="button"
             className="btn-edit"
-            onClick={() => {
-              if (!headerForm.id) {
-                setError("Please save or select an existing Order first.");
-                setMessage("");
-                return;
-              }
+            onClick={handleConfirmFinalOrder}
+            disabled={saving}
+          >
+            Confirm Final Order
+          </button>
 
-              localStorage.setItem(
-                "selected_invoice_order_id",
-                String(headerForm.id)
-              );
-
-              if (typeof openPage === "function") {
-                openPage("invoice");
-              } else {
-                setError("Invoice page is not connected in App.jsx.");
-              }
-            }}
+          <button
+            type="button"
+            className="btn-edit"
+            onClick={handleCreatePriceOffer}
             disabled={saving || !headerForm.id}
           >
-            Create Invoice
+            Create Price Offer
           </button>
 
           <button
@@ -1402,13 +1509,16 @@ export default function OrderPage({ openPage }) {
                   <th>Customer Code</th>
                   <th>Customer Symbol</th>
                   <th>Customer Name</th>
+                  <th>Status</th>
+                  <th>Version</th>
+                  <th>Final</th>
                   <th style={{ width: "160px" }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredHeaders.length === 0 ? (
                   <tr>
-                    <td colSpan="6" className="empty-cell">
+                    <td colSpan="9" className="empty-cell">
                       No Order records found.
                     </td>
                   </tr>
@@ -1423,6 +1533,9 @@ export default function OrderPage({ openPage }) {
                         <td>{customer.customer_code || ""}</td>
                         <td>{customer.customer_symbol || ""}</td>
                         <td>{customer.customer_name || ""}</td>
+                        <td>{row.status || "draft"}</td>
+                        <td>V{row.version_no || 1}</td>
+                        <td>{row.is_final ? "Yes" : ""}</td>
                         <td>
                           <div className="table-actions">
                             <button
