@@ -27,6 +27,12 @@ const CATEGORY_CONFIG = [
     placeholder: "Ex: Jebel Ali / Shanghai / Mersin",
   },
   {
+    key: "port_of_discharge",
+    title: "Port of Discharge",
+    description: "Define port of discharge",
+    placeholder: "Ex: Beirut / Jeddah / Umm Qasr",
+  },
+  {
     key: "shipping",
     title: "Shipping",
     description: "Define shipping method",

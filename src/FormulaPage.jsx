@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "./lib/supabaseClient";
 
 const emptyHeader = {
@@ -60,6 +60,13 @@ function cleanCodePart(value) {
     .replace(/\//g, "-");
 }
 
+function getFormulaPartFromCode(code) {
+  const text = String(code || "").trim().toUpperCase();
+  const match = text.match(/^FORM-\d{4}-(.+)$/);
+  if (!match) return "";
+  return cleanCodePart(match[1]);
+}
+
 function extractItemCodePart(itemName) {
   const text = String(itemName || "").toUpperCase().trim();
 
@@ -103,6 +110,11 @@ function calcLineCostFromValues(marketPrice, wtPct) {
   return round3(toNumber(marketPrice) * (toNumber(wtPct) / 100));
 }
 
+function calcLineLiterCostFromValues(marketPrice, wtPct, density) {
+  const rmCost = calcLineCostFromValues(marketPrice, wtPct);
+  return calcLiterCostFromMTDensity(rmCost, density);
+}
+
 function calcCostPerMTFromLines(lines, rmMap) {
   return round3(
     (lines || []).reduce((sum, line) => {
@@ -131,7 +143,10 @@ function calcLiterCost(row) {
   return calcLiterCostFromMTDensity(costPerMT, density);
 }
 
-export default function FormulaPage() {
+export default function FormulaPage({ view = "master", openPage } = {}) {
+  const isMasterView = view === "master";
+  const isListView = view === "list";
+  const pendingEditLoadedRef = useRef(false);
   const [customers, setCustomers] = useState([]);
   const [brands, setBrands] = useState([]);
   const [items, setItems] = useState([]);
@@ -691,6 +706,12 @@ export default function FormulaPage() {
   }
 
   function handleEdit(row) {
+    if (isListView && openPage) {
+      localStorage.setItem("makina_formula_edit_id", String(row.id));
+      openPage("formula-master");
+      return;
+    }
+
     setSelectedId(row.id);
     setMode("edit");
     setMessage("");
@@ -791,7 +812,8 @@ export default function FormulaPage() {
     if (tableCodeFilter !== "all") {
       result = result.filter(
         (row) =>
-          String(row.formula_code_generated || "") === String(tableCodeFilter)
+          getFormulaPartFromCode(row.formula_code_generated) ===
+          String(tableCodeFilter)
       );
     }
 
@@ -860,7 +882,11 @@ export default function FormulaPage() {
 
   const tableCodeOptions = useMemo(() => {
     return [
-      ...new Set(rows.map((row) => row.formula_code_generated).filter(Boolean)),
+      ...new Set(
+        rows
+          .map((row) => getFormulaPartFromCode(row.formula_code_generated))
+          .filter(Boolean)
+      ),
     ].sort();
   }, [rows]);
 
@@ -878,13 +904,50 @@ export default function FormulaPage() {
     form.sub_brand || ""
   }`;
 
+  useEffect(() => {
+    if (!isMasterView) return;
+    if (loading) return;
+    if (pendingEditLoadedRef.current) return;
+
+    const editId = localStorage.getItem("makina_formula_edit_id");
+    if (!editId) return;
+
+    const rowToEdit = rows.find((row) => String(row.id) === String(editId));
+    if (!rowToEdit) return;
+
+    pendingEditLoadedRef.current = true;
+    localStorage.removeItem("makina_formula_edit_id");
+    handleEdit(rowToEdit);
+  }, [isMasterView, loading, rows]);
+
+  function getPrintableFormulaName() {
+    return (
+      form.formula_code_generated ||
+      selectedItem?.item_name ||
+      "Formula"
+    )
+      .toString()
+      .trim()
+      .replace(/[\\/:*?"<>|]/g, "-");
+  }
+
+  function handlePrintFormula() {
+    const oldTitle = document.title;
+    document.title = getPrintableFormulaName();
+    window.print();
+    setTimeout(() => {
+      document.title = oldTitle;
+    }, 500);
+  }
+
   return (
-    <div className="page-shell">
+    <div className={`page-shell ${isListView ? "formula-list-shell" : ""}`}>
       <div className="page-title-wrap">
-        <h1>Formula</h1>
-        <p>Create and manage formula by Customer / Customer Brand / Item</p>
+        <h1>{isListView ? "Formula List" : "Formula Master"}</h1>
+        <p>{isListView ? "View saved formulas and edit them from Formula Master" : "Create and manage formula by Customer / Customer Brand / Item"}</p>
       </div>
 
+      {isMasterView && (
       <div className="page-card compact-top-card">
         <div className="form-grid formula-top-grid compact-grid">
           <div className="form-group">
@@ -1009,11 +1072,13 @@ export default function FormulaPage() {
           </div>
         </div>
       </div>
+      )}
 
       {message ? <div className="alert success">{message}</div> : null}
       {error ? <div className="alert error">{error}</div> : null}
 
-      <div className="table-card formula-details-card">
+      {isMasterView && (
+      <div className="table-card formula-details-card printable-formula-area">
         <div className="section-head">
           <h2>Formula Details</h2>
         </div>
@@ -1082,10 +1147,11 @@ export default function FormulaPage() {
             <table className="data-table formula-lines-table">
               <thead>
                 <tr>
-                  <th style={{ width: "40%" }}>RM</th>
-                  <th style={{ width: "12%" }}>Market Price</th>
+                  <th style={{ width: "36%" }}>RM</th>
                   <th style={{ width: "12%" }}>Wt%</th>
-                  <th style={{ width: "16%" }}>RM Cost</th>
+                  <th style={{ width: "14%" }}>Market Price</th>
+                  <th style={{ width: "14%" }}>RM Cost</th>
+                  <th style={{ width: "14%" }}>Lit Cost</th>
                   <th style={{ width: "10%" }}>Delete</th>
                 </tr>
               </thead>
@@ -1096,6 +1162,11 @@ export default function FormulaPage() {
                   const lineCost = calcLineCostFromValues(
                     marketPrice,
                     line.wt_pct
+                  );
+                  const lineLiterCost = calcLineLiterCostFromValues(
+                    marketPrice,
+                    line.wt_pct,
+                    form.density
                   );
 
                   return (
@@ -1115,7 +1186,6 @@ export default function FormulaPage() {
                           ))}
                         </select>
                       </td>
-                      <td>{marketPrice.toFixed(3)}</td>
                       <td>
                         <input
                           type="number"
@@ -1127,7 +1197,9 @@ export default function FormulaPage() {
                           placeholder="0.000"
                         />
                       </td>
+                      <td>{marketPrice.toFixed(3)}</td>
                       <td>{lineCost.toFixed(3)}</td>
+                      <td>{lineLiterCost.toFixed(3)}</td>
                       <td>
                         <button
                           type="button"
@@ -1145,12 +1217,15 @@ export default function FormulaPage() {
                   <td>
                     <strong>Total</strong>
                   </td>
-                  <td></td>
                   <td>
                     <strong>{totalWtPct.toFixed(3)}%</strong>
                   </td>
+                  <td></td>
                   <td>
                     <strong>{currentCostPerMT.toFixed(3)}</strong>
+                  </td>
+                  <td>
+                    <strong>{currentLiterCost.toFixed(3)}</strong>
                   </td>
                   <td></td>
                 </tr>
@@ -1186,6 +1261,14 @@ export default function FormulaPage() {
             </button>
             <button
               type="button"
+              className="btn-secondary no-print"
+              onClick={handlePrintFormula}
+              disabled={saving}
+            >
+              Print / PDF
+            </button>
+            <button
+              type="button"
               className="primary-action"
               onClick={handleAddFormula}
               disabled={saving}
@@ -1195,16 +1278,11 @@ export default function FormulaPage() {
           </div>
         </div>
       </div>
+      )}
 
-      <div className="toolbar-card">
-        <div className="toolbar formula-toolbar">
-          <input
-            type="text"
-            placeholder="Search by Customer / Customer Brand / Formula Code / Item"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-
+      {isListView && (
+      <div className="table-card saved-formulas-card formula-list-card">
+        <div className="formula-list-filters">
           <select
             value={customerFilter}
             onChange={(e) => setCustomerFilter(e.target.value)}
@@ -1230,6 +1308,18 @@ export default function FormulaPage() {
           </select>
 
           <select
+            value={tableCustomerSymbolFilter}
+            onChange={(e) => setTableCustomerSymbolFilter(e.target.value)}
+          >
+            <option value="all">All Customer Symbols</option>
+            {tableCustomerSymbolOptions.map((symbol) => (
+              <option key={symbol} value={symbol}>
+                {symbol}
+              </option>
+            ))}
+          </select>
+
+          <select
             value={itemFilter}
             onChange={(e) => setItemFilter(e.target.value)}
           >
@@ -1240,55 +1330,6 @@ export default function FormulaPage() {
               </option>
             ))}
           </select>
-        </div>
-      </div>
-
-      <div className="table-card saved-formulas-card">
-        <div className="saved-formulas-filters">
-          <div className="filter-box">
-            <label>CODE</label>
-            <select
-              value={tableCodeFilter}
-              onChange={(e) => setTableCodeFilter(e.target.value)}
-            >
-              <option value="all">All Codes</option>
-              {tableCodeOptions.map((code) => (
-                <option key={code} value={code}>
-                  {code}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="filter-box">
-            <label>CUSTOMER BRAND</label>
-            <select
-              value={tableBrandFilter}
-              onChange={(e) => setTableBrandFilter(e.target.value)}
-            >
-              <option value="all">All Customer Brands</option>
-              {tableBrandOptions.map((brand) => (
-                <option key={brand} value={brand}>
-                  {brand}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="filter-box">
-            <label>Customer Symbol</label>
-            <select
-              value={tableCustomerSymbolFilter}
-              onChange={(e) => setTableCustomerSymbolFilter(e.target.value)}
-            >
-              <option value="all">All Customer Symbols</option>
-              {tableCustomerSymbolOptions.map((symbol) => (
-                <option key={symbol} value={symbol}>
-                  {symbol}
-                </option>
-              ))}
-            </select>
-          </div>
         </div>
 
         <div className="saved-formulas-scroll roomy-saved-scroll">
@@ -1332,7 +1373,7 @@ export default function FormulaPage() {
                     </div>
                   </th>
                   <th
-                    className="sortable-th"
+                    className="sortable-th item-th"
                     onClick={() => handleSort("item_display")}
                   >
                     <div className="th-inner">
@@ -1343,7 +1384,7 @@ export default function FormulaPage() {
                     </div>
                   </th>
                   <th
-                    className="sortable-th"
+                    className="sortable-th cost-th"
                     onClick={() => handleSort("ton_cost")}
                   >
                     <div className="th-inner">
@@ -1354,7 +1395,7 @@ export default function FormulaPage() {
                     </div>
                   </th>
                   <th
-                    className="sortable-th"
+                    className="sortable-th cost-th"
                     onClick={() => handleSort("liter_cost")}
                   >
                     <div className="th-inner">
@@ -1364,9 +1405,9 @@ export default function FormulaPage() {
                       </span>
                     </div>
                   </th>
-                  <th>Use</th>
-                  <th>Edit</th>
-                  <th>Delete</th>
+                  <th className="action-th">Use</th>
+                  <th className="action-th">Edit</th>
+                  <th className="action-th">Delete</th>
                 </tr>
               </thead>
               <tbody>
@@ -1382,7 +1423,7 @@ export default function FormulaPage() {
                       <td>{row.formula_code_generated || "-"}</td>
                       <td>{row.customer_symbol || "-"}</td>
                       <td>{row.customer_brand || "-"}</td>
-                      <td>{`${row.sub_brand ? `${row.sub_brand} - ` : ""}${
+                      <td className="item-cell">{`${row.sub_brand ? `${row.sub_brand} - ` : ""}${
                         row.item_name || "-"
                       }`}</td>
                       <td>{calcTonCost(row).toFixed(3)}</td>
@@ -1422,6 +1463,7 @@ export default function FormulaPage() {
           )}
         </div>
       </div>
+      )}
 
       <style>{`
         .page-shell {
@@ -1457,6 +1499,35 @@ export default function FormulaPage() {
           border: 1px solid #e5e7eb;
           max-width: 1200px;
           margin: 0 auto 14px;
+        }
+
+        .formula-list-shell .table-card {
+          max-width: none;
+          width: calc(100% - 24px);
+        }
+
+        .formula-list-card {
+          padding-top: 14px;
+        }
+
+        .formula-list-filters {
+          display: grid;
+          grid-template-columns: repeat(4, minmax(180px, 1fr));
+          gap: 28px;
+          padding: 10px 24px 18px;
+          align-items: center;
+        }
+
+        .formula-list-filters select {
+          height: 42px;
+          border: 1px solid #d1d5db;
+          border-radius: 10px;
+          padding: 0 12px;
+          font-size: 14px;
+          background: #fff;
+          outline: none;
+          color: #1f2937;
+          width: 100%;
         }
 
         .compact-top-card,
@@ -1637,8 +1708,12 @@ export default function FormulaPage() {
         }
 
         .roomy-saved-scroll {
-          max-height: 520px;
-          padding: 8px 12px 18px;
+          max-height: calc(100vh - 220px);
+          padding: 0 14px 18px;
+        }
+
+        .formula-list-shell .saved-formulas-scroll {
+          overflow-x: hidden;
         }
 
         .saved-formulas-filters {
@@ -1669,6 +1744,11 @@ export default function FormulaPage() {
           background: #fff;
         }
 
+        .formula-list-shell .data-table {
+          min-width: 0;
+          table-layout: auto;
+        }
+
         .data-table thead th {
           position: sticky;
           top: 0;
@@ -1692,6 +1772,39 @@ export default function FormulaPage() {
 
         .compact-bottom-table {
           min-width: 1080px;
+        }
+
+        .formula-list-shell .compact-bottom-table {
+          min-width: 0;
+        }
+
+        .formula-list-shell .data-table thead th,
+        .formula-list-shell .data-table tbody td {
+          padding: 12px 12px;
+        }
+
+        .formula-list-shell .item-cell {
+          white-space: normal;
+          min-width: 280px;
+        }
+
+        .formula-list-shell .item-th {
+          min-width: 280px;
+        }
+
+        .formula-list-shell .cost-th {
+          width: 95px;
+        }
+
+        .formula-list-shell .action-th {
+          width: 78px;
+        }
+
+        .formula-list-shell .btn-use,
+        .formula-list-shell .btn-edit,
+        .formula-list-shell .btn-delete {
+          height: 36px;
+          padding: 0 14px;
         }
 
         .sortable-th {
@@ -1752,6 +1865,44 @@ export default function FormulaPage() {
           color: #64748b;
         }
 
+
+        @media print {
+          body * {
+            visibility: hidden !important;
+          }
+
+          .printable-formula-area,
+          .printable-formula-area * {
+            visibility: visible !important;
+          }
+
+          .printable-formula-area {
+            position: absolute !important;
+            left: 0 !important;
+            top: 0 !important;
+            width: 100% !important;
+            max-width: none !important;
+            margin: 0 !important;
+            box-shadow: none !important;
+            border: none !important;
+          }
+
+          .no-print,
+          .bottom-action-row,
+          .btn-delete {
+            display: none !important;
+          }
+
+          .formula-lines-scroll {
+            max-height: none !important;
+            overflow: visible !important;
+          }
+
+          .data-table thead th {
+            position: static !important;
+          }
+        }
+
         @media (max-width: 1400px) {
           .formula-top-grid {
             grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1764,7 +1915,8 @@ export default function FormulaPage() {
 
         @media (max-width: 1100px) {
           .formula-toolbar,
-          .saved-formulas-filters {
+          .saved-formulas-filters,
+          .formula-list-filters {
             grid-template-columns: 1fr 1fr;
           }
         }
@@ -1772,7 +1924,8 @@ export default function FormulaPage() {
         @media (max-width: 700px) {
           .formula-top-grid,
           .formula-toolbar,
-          .saved-formulas-filters {
+          .saved-formulas-filters,
+          .formula-list-filters {
             grid-template-columns: 1fr;
           }
 

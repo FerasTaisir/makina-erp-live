@@ -122,10 +122,7 @@ export default function CustomersPage() {
         const nextCode = getNextCustomerCode(normalizedCustomers);
         setForm((prev) => ({
           ...prev,
-          customer_code:
-            prev.customer_code && prev.customer_code.startsWith("CUST-")
-              ? prev.customer_code
-              : nextCode,
+          customer_code: nextCode,
         }));
       }
     } catch (error) {

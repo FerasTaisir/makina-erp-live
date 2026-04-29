@@ -7,6 +7,7 @@ const emptyForm = {
   customer_brand_id: "",
   sub_brand: "",
   item_id: "",
+  description: "",
 };
 
 export default function CustomerItemsPage() {
@@ -147,6 +148,7 @@ export default function CustomerItemsPage() {
           String(row.customer_brand || "").toLowerCase().includes(q) ||
           String(row.sub_brand || "").toLowerCase().includes(q) ||
           String(row.item || "").toLowerCase().includes(q) ||
+          String(row.description || "").toLowerCase().includes(q) ||
           String(fullItemName || "").toLowerCase().includes(q)
         );
       });
@@ -252,6 +254,7 @@ export default function CustomerItemsPage() {
         customer_brand_id: form.customer_brand_id,
         sub_brand: form.sub_brand.trim() || null,
         item_id: form.item_id,
+        description: form.description.trim() || null,
       };
 
       if (form.id) {
@@ -288,6 +291,7 @@ export default function CustomerItemsPage() {
       customer_brand_id: row.customer_brand_id || "",
       sub_brand: row.sub_brand || "",
       item_id: row.item_id || "",
+      description: row.description || "",
     });
 
     setMessage("");
@@ -302,7 +306,9 @@ export default function CustomerItemsPage() {
 
   async function handleDelete(row) {
     const ok = window.confirm(
-      `Delete Customer Item?\n\n${row.customer_symbol || ""} | ${row.customer_brand || ""} | ${getFullItemName(row)}`
+      `Delete Customer Item?\n\n${row.customer_symbol || ""} | ${
+        row.customer_brand || ""
+      } | ${getFullItemName(row)}`
     );
 
     if (!ok) return;
@@ -338,7 +344,7 @@ export default function CustomerItemsPage() {
       </div>
 
       <div className="page-card">
-        <form onSubmit={handleSave} className="form-grid four-cols">
+        <form onSubmit={handleSave} className="form-grid five-cols">
           <div className="form-group">
             <label>Customer</label>
             <select
@@ -406,6 +412,17 @@ export default function CustomerItemsPage() {
             </select>
           </div>
 
+          <div className="form-group">
+            <label>Description</label>
+            <input
+              type="text"
+              name="description"
+              value={form.description}
+              onChange={handleChange}
+              placeholder="Enter description manually"
+            />
+          </div>
+
           <div className="form-actions">
             <button type="submit" disabled={saving}>
               {saving ? "Saving..." : form.id ? "Update" : "Add"}
@@ -430,7 +447,7 @@ export default function CustomerItemsPage() {
         <div className="toolbar toolbar-three">
           <input
             type="text"
-            placeholder="Search by Customer / Brand / Sub-Brand / Item"
+            placeholder="Search by Customer / Brand / Sub-Brand / Item / Description"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
@@ -465,6 +482,7 @@ export default function CustomerItemsPage() {
                   <th>Customer Symbol</th>
                   <th>Customer-Brand</th>
                   <th>Item</th>
+                  <th>Description</th>
                   <th style={{ width: "180px" }}>Actions</th>
                 </tr>
               </thead>
@@ -472,7 +490,7 @@ export default function CustomerItemsPage() {
               <tbody>
                 {filteredRows.length === 0 ? (
                   <tr>
-                    <td colSpan="5" className="empty-cell">
+                    <td colSpan="6" className="empty-cell">
                       No records found.
                     </td>
                   </tr>
@@ -483,6 +501,7 @@ export default function CustomerItemsPage() {
                       <td>{row.customer_symbol}</td>
                       <td>{row.customer_brand}</td>
                       <td>{getFullItemName(row)}</td>
+                      <td>{row.description || ""}</td>
                       <td>
                         <div className="table-actions">
                           <button
@@ -556,8 +575,8 @@ export default function CustomerItemsPage() {
           display: grid;
           gap: 14px;
         }
-        .four-cols {
-          grid-template-columns: repeat(4, minmax(0, 1fr));
+        .five-cols {
+          grid-template-columns: repeat(5, minmax(0, 1fr));
         }
         .form-group {
           display: flex;
@@ -643,6 +662,8 @@ export default function CustomerItemsPage() {
         }
         .table-wrap {
           overflow-x: auto;
+          overflow-y: auto;
+          max-height: 500px;
         }
         .data-table {
           width: 100%;
@@ -656,6 +677,9 @@ export default function CustomerItemsPage() {
           padding: 16px 18px;
           font-size: 14px;
           border-bottom: 1px solid #e5e7eb;
+          position: sticky;
+          top: 0;
+          z-index: 10;
         }
         .data-table tbody td {
           padding: 16px 18px;
@@ -688,7 +712,7 @@ export default function CustomerItemsPage() {
           color: #64748b;
         }
         @media (max-width: 1100px) {
-          .four-cols {
+          .five-cols {
             grid-template-columns: repeat(2, minmax(0, 1fr));
           }
           .toolbar-three {
@@ -699,7 +723,7 @@ export default function CustomerItemsPage() {
           }
         }
         @media (max-width: 700px) {
-          .four-cols {
+          .five-cols {
             grid-template-columns: 1fr;
           }
           .toolbar-three {
